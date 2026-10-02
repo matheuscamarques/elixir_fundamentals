@@ -1414,3 +1414,473 @@ defmodule MedianProofTest do
     end
   end
 end
+
+# Add Two Numbers article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution` in separate blocks;
+# they are renamed here so all four can coexist in one file.
+defmodule ListNode do
+  @type t :: %__MODULE__{val: integer, next: ListNode.t() | nil}
+  defstruct val: 0, next: nil
+end
+
+defmodule AddTwoNumbersConvert do
+  def add_two_numbers(l1, l2) do
+    num1 = list_to_integer(l1, 0, 1)
+    num2 = list_to_integer(l2, 0, 1)
+    integer_to_list(num1 + num2)
+  end
+
+  defp list_to_integer(nil, acc, _multiplier), do: acc
+
+  defp list_to_integer(%ListNode{val: val, next: next}, acc, multiplier) do
+    list_to_integer(next, acc + val * multiplier, multiplier * 10)
+  end
+
+  defp integer_to_list(0), do: %ListNode{val: 0}
+
+  defp integer_to_list(num) do
+    build_list(num, nil)
+  end
+
+  defp build_list(0, acc), do: acc
+
+  defp build_list(num, acc) do
+    digit = rem(num, 10)
+    build_list(div(num, 10), %ListNode{val: digit, next: acc})
+  end
+end
+
+defmodule AddTwoNumbersRecursive do
+  @spec add_two_numbers(l1 :: ListNode.t() | nil, l2 :: ListNode.t() | nil) :: ListNode.t() | nil
+  def add_two_numbers(l1, l2) do
+    add_lists(l1, l2, 0)
+  end
+
+  defp add_lists(nil, nil, 0), do: nil
+  defp add_lists(nil, nil, carry) when carry > 0, do: %ListNode{val: carry}
+
+  defp add_lists(nil, %ListNode{val: val, next: next}, carry) do
+    sum = val + carry
+    %ListNode{val: rem(sum, 10), next: add_lists(nil, next, div(sum, 10))}
+  end
+
+  defp add_lists(%ListNode{val: val, next: next}, nil, carry) do
+    sum = val + carry
+    %ListNode{val: rem(sum, 10), next: add_lists(next, nil, div(sum, 10))}
+  end
+
+  defp add_lists(%ListNode{val: v1, next: n1}, %ListNode{val: v2, next: n2}, carry) do
+    sum = v1 + v2 + carry
+    %ListNode{val: rem(sum, 10), next: add_lists(n1, n2, div(sum, 10))}
+  end
+end
+
+defmodule AddTwoNumbersAcc do
+  def add_two_numbers(l1, l2) do
+    add_lists(l1, l2, 0, nil)
+  end
+
+  defp add_lists(nil, nil, 0, acc), do: acc
+  defp add_lists(nil, nil, carry, acc), do: %ListNode{val: carry, next: acc}
+
+  defp add_lists(nil, %ListNode{val: val, next: next}, carry, acc) do
+    sum = val + carry
+    add_lists(nil, next, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+
+  defp add_lists(%ListNode{val: val, next: next}, nil, carry, acc) do
+    sum = val + carry
+    add_lists(next, nil, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+
+  defp add_lists(%ListNode{val: v1, next: n1}, %ListNode{val: v2, next: n2}, carry, acc) do
+    sum = v1 + v2 + carry
+    add_lists(n1, n2, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+end
+
+defmodule AddTwoNumbersLists do
+  def add_two_numbers(l1, l2) do
+    do_add(Enum.reverse(l1), Enum.reverse(l2), 0, [])
+  end
+
+  defp do_add([], [], 0, acc), do: Enum.reverse(acc)
+  defp do_add([], [], carry, acc), do: Enum.reverse([carry | acc])
+
+  defp do_add([], [h | t], carry, acc) do
+    sum = h + carry
+    do_add([], t, div(sum, 10), [rem(sum, 10) | acc])
+  end
+
+  defp do_add([h | t], [], carry, acc) do
+    sum = h + carry
+    do_add(t, [], div(sum, 10), [rem(sum, 10) | acc])
+  end
+
+  defp do_add([h1 | t1], [h2 | t2], carry, acc) do
+    sum = h1 + h2 + carry
+    do_add(t1, t2, div(sum, 10), [rem(sum, 10) | acc])
+  end
+end
+
+defmodule AddTwoNumbersProofTest do
+  # Proof suite for the article "Solving LeetCode's Add Two Numbers in Elixir"
+  # (Elixir 1.20.1 / OTP 29). Same 5W1H/STAR convention.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Add Two Numbers: correct versions" do
+    # 5W1H | Who: reader. What: recursive pattern-matching version passes all three LeetCode examples plus final-carry and uneven lengths. When/Where: article Solution 2. How: struct→list asserts. Why: the recommended optimal approach.
+    # STAR | Situation: [2,4,3]+[5,6,4], [0]+[0], 7×9+4×9, [9]+[1], [1,8]+[0]. Task: lock outputs. Action: add_two_numbers each. Result: [7,0,8], [0], [8,9,9,9,0,0,0,1], [0,1], [1,8].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive version passes all examples and edges" do
+      assert AddTwoNumbersRecursive.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
+      assert AddTwoNumbersRecursive.add_two_numbers(from_list([0]), from_list([0])) |> to_list() == [0]
+
+      assert AddTwoNumbersRecursive.add_two_numbers(
+               from_list([9, 9, 9, 9, 9, 9, 9]),
+               from_list([9, 9, 9, 9])
+             )
+             |> to_list() == [8, 9, 9, 9, 0, 0, 0, 1]
+
+      assert AddTwoNumbersRecursive.add_two_numbers(from_list([9]), from_list([1])) |> to_list() == [0, 1]
+      assert AddTwoNumbersRecursive.add_two_numbers(from_list([1, 8]), from_list([0])) |> to_list() == [1, 8]
+    end
+
+    # 5W1H | Who: reader. What: plain-list Solution 4 passes the equal-length example and final carry. When/Where: article Solution 4 (plain lists, not structs). How: equality asserts. Why: proves the double-reverse accumulator logic — for equal lengths.
+    # STAR | Situation: [2,4,3]+[5,6,4], [9]+[1]. Task: lock outputs. Action: add_two_numbers each. Result: [7,0,8], [0,1].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "plain-list version passes equal-length cases" do
+      assert AddTwoNumbersLists.add_two_numbers([2, 4, 3], [5, 6, 4]) == [7, 0, 8]
+      assert AddTwoNumbersLists.add_two_numbers([9], [1]) == [0, 1]
+    end
+
+    # 5W1H | Who: prover. What: conversion version handles only the trivial [0]+[0] case. When/Where: article Solution 1 partial credit. How: single assert. Why: isolates what the buggy version gets right.
+    # STAR | Situation: [0]+[0]. Task: prove [0]. Action: add_two_numbers. Result: [0].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "conversion version handles zero" do
+      assert AddTwoNumbersConvert.add_two_numbers(from_list([0]), from_list([0])) |> to_list() == [0]
+    end
+  end
+
+  describe "Add Two Numbers: reversed-output bugs (article errors documented)" do
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — integer-conversion returns digits FORWARD ([8,0,7]) because build_list prepends least-significant-first. When/Where: article Solution 1. How: assert actual + refute expected. Why: prepend-direction confusion.
+    # STAR | Situation: 342+465=807, article implies [7,0,8]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "conversion version returns forward order" do
+      assert AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
+      refute AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — accumulator version returns [8,0,7], contradicting the "built in the correct order" claim; prepending LSB-first yields MSB-first. When/Where: article Solution 3. How: assert actual + refute expected. Why: same prepend-direction confusion, plus a false correctness claim.
+    # STAR | Situation: [2,4,3]+[5,6,4]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "accumulator version returns forward order" do
+      assert AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
+      refute AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — plain-list version misaligns place values on UNEVEN lengths: reversing then pairing head-to-head aligns MSB-with-MSB, but addition needs LSB-with-LSB; 81+0 yields [8,1] (=18). When/Where: article Solution 4, never tested uneven. How: assert actual wrong value. Why: reverse-then-zip only works for equal lengths.
+    # STAR | Situation: [1,8]+[0] is 81+0=81, expect [1,8]. Task: prove actual. Action: add_two_numbers. Result: [8,1] (wrong value, not just order).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "plain-list version misaligns uneven lengths" do
+      assert AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [8, 1]
+      refute AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [1, 8]
+    end
+  end
+end
+
+# Longest Substring article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution` in separate blocks;
+# they are renamed here so all three can coexist in one file.
+defmodule SubstrBrute do
+  @spec length_of_longest_substring(s :: String.t()) :: integer
+  def length_of_longest_substring(s) do
+    n = String.length(s)
+
+    0..(n - 1)
+    |> Enum.flat_map(fn i ->
+      (i + 1)..n
+      |> Enum.map(fn j -> String.slice(s, i, j - i) end)
+    end)
+    |> Enum.filter(&has_unique_chars?/1)
+    |> Enum.map(&String.length/1)
+    |> Enum.max(fn -> 0 end)
+  end
+
+  defp has_unique_chars?(str) do
+    chars = String.graphemes(str)
+    length(chars) == length(Enum.uniq(chars))
+  end
+end
+
+defmodule SubstrRec do
+  @spec length_of_longest_substring(s :: String.t()) :: integer
+  def length_of_longest_substring(s) do
+    s |> String.graphemes() |> find_longest(0, 0, 0, %{})
+  end
+
+  defp find_longest([], _left, _right, max_len, _last_seen), do: max_len
+
+  defp find_longest([char | rest], left, right, max_len, last_seen) do
+    new_left =
+      case Map.get(last_seen, char) do
+        nil -> left
+        prev_index when prev_index >= left -> prev_index + 1
+        _ -> left
+      end
+
+    new_max = max(max_len, right - new_left + 1)
+    new_seen = Map.put(last_seen, char, right)
+
+    find_longest(rest, new_left, right + 1, new_max, new_seen)
+  end
+end
+
+defmodule SubstrReduceWhile do
+  @spec length_of_longest_substring(s :: String.t()) :: integer
+  def length_of_longest_substring(s) do
+    s
+    |> String.graphemes()
+    |> Enum.with_index()
+    |> Enum.reduce_while({0, 0, 0, %{}}, fn {char, right}, {left, max_len, _right, last_seen} ->
+      new_left =
+        case Map.get(last_seen, char) do
+          nil -> left
+          prev_index when prev_index >= left -> prev_index + 1
+          _ -> left
+        end
+
+      new_max = max(max_len, right - new_left + 1)
+      new_seen = Map.put(last_seen, char, right)
+
+      {:cont, {new_left, new_max, right + 1, new_seen}}
+    end)
+    |> elem(1)
+  end
+end
+
+defmodule SubstrProofTest do
+  # Proof suite for the article "Solving LeetCode's Longest Substring Without
+  # Repeating Characters in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Longest Substring: examples and traps" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus classic traps (abba, dvdf), full-repeat, all-unique, single char, Unicode. When/Where: article examples + pitfalls. How: equality asserts per version. Why: baseline + trap coverage.
+    # STAR | Situation: 10 inputs from "" to "éàüé". Task: lock every output. Action: run brute, rec, reduce_while on each. Result: 3,1,3,0,1,2,3,6,2,3 on all three.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on examples, traps and edges" do
+      cases = [
+        {"abcabcbb", 3},
+        {"bbbbb", 1},
+        {"pwwkew", 3},
+        {"a", 1},
+        {"abba", 2},
+        {"dvdf", 3},
+        {"abcdef", 6},
+        {"aaaaab", 2},
+        {"éàüé", 3}
+      ]
+
+      for {s, expected} <- cases do
+        assert SubstrBrute.length_of_longest_substring(s) == expected
+        assert SubstrRec.length_of_longest_substring(s) == expected
+        assert SubstrReduceWhile.length_of_longest_substring(s) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: empty string returns 0 on all three (brute via Enum.max default, sliding windows via base acc). When/Where: article pitfalls (empty input). How: asserts; brute wrapped in stderr capture (see next test). Why: empty-input contract.
+    # STAR | Situation: "". Task: prove 0. Action: run rec and reduce_while directly. Result: 0, 0.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "empty string returns zero" do
+      assert SubstrRec.length_of_longest_substring("") == 0
+      assert SubstrReduceWhile.length_of_longest_substring("") == 0
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: MINOR WART — brute force on "" still returns 0 but emits TWO decreasing-Range warnings (0..-1 and inner (i+1)..n); the article credits Enum.max(fn->0 end) yet omits this noise. When/Where: article Solution 1 on empty input, Elixir 1.20. How: capture stderr, assert result + warning text. Why: keeps suite output clean and documents the wart.
+    # STAR | Situation: length_of_longest_substring(""). Task: prove 0 AND the warnings. Action: run with stderr captured. Result: 0 with "Range" warnings present.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force on empty string warns but returns zero" do
+      output =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          send(self(), {:res, SubstrBrute.length_of_longest_substring("")})
+        end)
+
+      receive do
+        {:res, result} -> assert result == 0
+      end
+
+      assert output =~ "Range"
+    end
+  end
+end
+
+# Longest Palindromic Substring article code, inlined here (this repo never
+# uses /lib). NOTE: the article names every version `Solution`; renamed here.
+defmodule PalinBrute do
+  @spec longest_palindrome(s :: String.t()) :: String.t()
+  def longest_palindrome(s) do
+    n = String.length(s)
+
+    0..(n - 1)
+    |> Enum.flat_map(fn i ->
+      (i + 1)..n
+      |> Enum.map(fn j -> String.slice(s, i, j - i) end)
+    end)
+    |> Enum.filter(&palindrome?/1)
+    |> Enum.max_by(&String.length/1, fn -> "" end)
+  end
+
+  defp palindrome?(str), do: str == String.reverse(str)
+end
+
+# Expand-around-center with the article's guard FIXED: the printed guard
+# `when ... and Enum.at(chars, left) == Enum.at(chars, right)` does not
+# compile (Enum.at/2 is not guard-safe), so the comparison moved into the body.
+defmodule PalinExpandFixed do
+  @spec longest_palindrome(s :: String.t()) :: String.t()
+  def longest_palindrome(s) do
+    chars = String.graphemes(s)
+    n = length(chars)
+
+    {start, max_len} =
+      0..(n - 1)
+      |> Enum.reduce({0, 0}, fn i, {best_start, best_len} ->
+        {s1, l1} = expand(chars, i, i)
+        {s2, l2} = expand(chars, i, i + 1)
+        {cs, cl} = if l1 >= l2, do: {s1, l1}, else: {s2, l2}
+        if cl > best_len, do: {cs, cl}, else: {best_start, best_len}
+      end)
+
+    chars |> Enum.slice(start, max_len) |> Enum.join()
+  end
+
+  defp expand(chars, left, right), do: expand(chars, left, right, length(chars))
+
+  defp expand(chars, left, right, n) when left >= 0 and right < n do
+    if Enum.at(chars, left) == Enum.at(chars, right) do
+      expand(chars, left - 1, right + 1, n)
+    else
+      {left + 1, right - left - 1}
+    end
+  end
+
+  defp expand(_chars, left, right, _n), do: {left + 1, right - left - 1}
+end
+
+defmodule PalinProofTest do
+  # Proof suite for the article "Solving LeetCode's Longest Palindromic
+  # Substring in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  # The article's expand/4 clause, VERBATIM (guard calls Enum.at/2).
+  # Kept as a string: it must never compile into this suite.
+  @verbatim_expand_src """
+  defmodule VerbatimExpand do
+    defp expand(chars, left, right, n) when left >= 0 and right < n and Enum.at(chars, left) == Enum.at(chars, right) do
+      expand(chars, left - 1, right + 1, n)
+    end
+    defp expand(_chars, left, right, _n), do: {left + 1, right - left - 1}
+  end
+  """
+
+  # The article's Manacher implementation, VERBATIM (renamed module only).
+  # Kept as a string: compiling it into the suite would emit rebinding
+  # warnings, and its behavior is the bug under proof.
+  @verbatim_manacher_src """
+  defmodule VerbatimManacher do
+    def longest_palindrome(s) do
+      t = "#" <> Enum.join(String.graphemes(s), "#") <> "#"
+      chars = String.graphemes(t)
+      n = length(chars)
+      p = :array.new(n, default: 0)
+      {center, right} =
+        Enum.reduce(0..(n - 1), {0, 0}, fn i, {c, r} ->
+          mirror = 2 * c - i
+          initial = if i < r, do: min(r - i, :array.get(mirror, p)), else: 0
+          {fr, _} = expand_man(chars, i - initial, i + initial, n, initial, p, i)
+          new_p = :array.set(i, fr, p)
+          p = new_p
+          if i + fr > r, do: {i, i + fr}, else: {c, r}
+        end)
+      {ml, mc} =
+        Enum.reduce(0..(n - 1), {0, 0}, fn i, {m1, mcc} ->
+          radius = :array.get(i, p)
+          if radius > m1, do: {radius, i}, else: {m1, mcc}
+        end)
+      _ = {center, right}
+      s |> String.slice(div(mc - ml, 2), ml)
+    end
+    defp expand_man(chars, l, r, n, radius, p, i) do
+      if l >= 0 and r < n and Enum.at(chars, l) == Enum.at(chars, r) do
+        expand_man(chars, l - 1, r + 1, n, radius + 1, p, i)
+      else
+        {radius, p}
+      end
+    end
+  end
+  """
+
+  describe "Palindrome: correct versions" do
+    # 5W1H | Who: reader. What: brute force passes both LeetCode examples plus unambiguous cases (even, all-same, single, unicode). When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
+    # STAR | Situation: "babad", "cbbd", "racecar", "abba", "a", "aaaa", "été", "abcde". Task: lock outputs. Action: longest_palindrome each. Result: "bab", "bb", "racecar", "abba", "a", "aaaa", "été", "a".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force passes examples and cases" do
+      assert PalinBrute.longest_palindrome("babad") == "bab"
+      assert PalinBrute.longest_palindrome("cbbd") == "bb"
+      assert PalinBrute.longest_palindrome("racecar") == "racecar"
+      assert PalinBrute.longest_palindrome("abba") == "abba"
+      assert PalinBrute.longest_palindrome("a") == "a"
+      assert PalinBrute.longest_palindrome("aaaa") == "aaaa"
+      assert PalinBrute.longest_palindrome("été") == "été"
+      assert PalinBrute.longest_palindrome("abcde") == "a"
+    end
+
+    # 5W1H | Who: reader. What: FIXED expand-around-center matches brute force on every case above. When/Where: article Solution 2 after moving Enum.at out of the guard. How: equality asserts. Why: proves the algorithm once the guard is fixed.
+    # STAR | Situation: same eight inputs. Task: lock agreement. Action: longest_palindrome each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed expand matches brute force" do
+      for s <- ["babad", "cbbd", "racecar", "abba", "a", "aaaa", "été", "abcde", "abcba", "abccba", "bananas", "aabbaa"] do
+        assert PalinExpandFixed.longest_palindrome(s) == PalinBrute.longest_palindrome(s)
+      end
+    end
+  end
+
+  describe "Palindrome: critical article errors (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the printed expand/4 guard calls Enum.at/2, which is NOT guard-safe: the flagship solution does not compile as printed. When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: guard-safe boundary every Elixir dev must know.
+    # STAR | Situation: verbatim guard with Enum.at. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote Enum.at/2 inside guard).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim expand guard does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_expand_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim Manacher returns "" for EVERY input: `p = new_p` rebinds inside the fn body so radius updates never escape the iteration, and the final scan reads the pristine all-zero array (max radius 0, length 0). When/Where: article Solution 3. How: runtime-compile verbatim source (stderr captured), assert "" on three inputs. Why: rebinding-vs-threading through Enum acc. Fix: thread p as {c, r, p} and scan the returned array.
+    # STAR | Situation: verbatim Manacher on "babad", "cbbd", "racecar". Task: prove empty results. Action: compile source, run each. Result: "", "", "".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim Manacher always returns empty string" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_manacher_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert apply(mod, :longest_palindrome, ["babad"]) == ""
+      assert apply(mod, :longest_palindrome, ["cbbd"]) == ""
+      assert apply(mod, :longest_palindrome, ["racecar"]) == ""
+    end
+  end
+end
