@@ -76,8 +76,9 @@ test/proof_test.exs           # full proofs: 5W1H + STAR + FLOW, warning-clean
 test/corrections_test.exs     # frozen mistake-rows split for tuning
 properties/audit_test.exs     # audit properties (NOT corpus): mix test properties/
 scripts/derive.exs            # .exs → dataset/*.jsonl (mix run scripts/derive.exs)
+scripts/derive_snippets.exs   # solution modules → dataset/snippets.jsonl
 scripts/lint.exs              # schema linter (mix run scripts/lint.exs)
-dataset/*.jsonl               # derived tuning rows: explain/detect/fix/generate
+dataset/*.jsonl               # derived tuning rows: explain/detect/fix/generate/snippets
 lib/elixir_fundamentals.ex    # unused placeholder (repo keeps code in test files)
 ```
 

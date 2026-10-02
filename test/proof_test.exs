@@ -3925,3 +3925,81 @@ defmodule Sum3ProofTest do
     end
   end
 end
+
+defmodule HallucinationGuardTest do
+  # Invented-function guard: AIs hallucinate plausible stdlib names.
+  # Every refute below was verified by running function_exported?/3 on
+  # Elixir 1.20.1/OTP29 — including the near-misses we almost asserted
+  # (Map.update!/3, List.first/2, String.splitter/3 and Enum.find_index/2
+  # all EXIST). Same convention: 5W1H + STAR + Author.
+  use ExUnit.Case, async: true
+
+  defp loaded!(mod) do
+    assert {:module, ^mod} = :code.ensure_loaded(mod)
+  end
+
+  describe "hallucinated stdlib functions do not exist" do
+    # 5W1H | Who: prover + future AI reader. What: String.reverse_string/1 does not exist (real: reverse/1); calling it raises UndefinedFunctionError. When/Where: Elixir 1.20.1/OTP29 stdlib surface. How: ensure_loaded + refute/assert + apply-raise. Why: kills the most plausible invented name in this corpus (reverse appears everywhere).
+    # STAR | Situation: String.reverse_string("ab") vs String.reverse("ab"). Task: prove absent vs present. Action: function_exported? both + apply the fake. Result: false, true, UndefinedFunctionError.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "String.reverse_string/1 is invented" do
+      loaded!(String)
+      refute function_exported?(String, :reverse_string, 1)
+      assert function_exported?(String, :reverse, 1)
+
+      assert_raise UndefinedFunctionError, fn ->
+        apply(String, :reverse_string, ["ab"])
+      end
+    end
+
+    # 5W1H | Who: prover. What: List.index/2 does not exist (real: Enum.find_index/2). When/Where: Elixir 1.20.1/OTP29. How: ensure_loaded + refute/assert. Why: List vs Enum namespace confusion.
+    # STAR | Situation: List.index vs Enum.find_index. Task: prove absent vs present. Action: function_exported? both. Result: false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "List.index/2 is invented" do
+      loaded!(List)
+      loaded!(Enum)
+      refute function_exported?(List, :index, 2)
+      assert function_exported?(Enum, :find_index, 2)
+    end
+
+    # 5W1H | Who: prover. What: Enum.member?/3 does not exist (real: member?/2). When/Where: Elixir 1.20.1/OTP29. How: ensure_loaded + refute/assert. Why: arity hallucination on a real function.
+    # STAR | Situation: Enum.member?/3 vs /2. Task: prove absent vs present. Action: function_exported? both. Result: false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "Enum.member?/3 is invented" do
+      loaded!(Enum)
+      refute function_exported?(Enum, :member?, 3)
+      assert function_exported?(Enum, :member?, 2)
+    end
+
+    # 5W1H | Who: prover. What: String.split_once/2 does not exist (real: splitter/2,3 and split/2,3). When/Where: Elixir 1.20.1/OTP29. How: ensure_loaded + refute/assert. Why: plausible name stitched from split + once.
+    # STAR | Situation: split_once vs splitter/split. Task: prove absent vs present. Action: function_exported? all. Result: false, true, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "String.split_once/2 is invented" do
+      loaded!(String)
+      refute function_exported?(String, :split_once, 2)
+      assert function_exported?(String, :splitter, 3)
+      assert function_exported?(String, :split, 3)
+    end
+
+    # 5W1H | Who: prover. What: Map.merge!/2 does not exist (real: merge/2); Kernel.is_non_empty_list/1 does not exist (real: is_list/1). When/Where: Elixir 1.20.1/OTP29. How: ensure_loaded + refute/assert pairs. Why: bang-suffix and guard-name inventions.
+    # STAR | Situation: merge! vs merge, is_non_empty_list vs is_list. Task: prove absent vs present. Action: function_exported? all four. Result: false, true, false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "Map.merge!/2 and Kernel.is_non_empty_list/1 are invented" do
+      loaded!(Map)
+      loaded!(Kernel)
+      refute function_exported?(Map, :merge!, 2)
+      assert function_exported?(Map, :merge, 2)
+      refute function_exported?(Kernel, :is_non_empty_list, 1)
+      assert function_exported?(Kernel, :is_list, 1)
+    end
+
+    # 5W1H | Who: prover. What: String.at/3 does not exist (real: at/2). When/Where: Elixir 1.20.1/OTP29. How: ensure_loaded + refute/assert. Why: arity hallucination (a default arg that isn't there).
+    # STAR | Situation: String.at/3 vs at/2. Task: prove absent vs present. Action: function_exported? both. Result: false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "String.at/3 is invented" do
+      loaded!(String)
+      refute function_exported?(String, :at, 3)
+      assert function_exported?(String, :at, 2)
+    end
+  end
+end

@@ -93,10 +93,17 @@ defmodule Derive do
   defp take_comments(lines, idx, acc) do
     line = Enum.at(lines, idx, "")
 
-    if Regex.match?(~r/^\s*#/, line) do
-      take_comments(lines, idx - 1, [line | acc])
-    else
-      acc
+    cond do
+      Regex.match?(~r/^\s*#/, line) ->
+        take_comments(lines, idx - 1, [line | acc])
+
+      # @tag/@describetag lines sit between comments and the test;
+      # they are metadata, not content boundaries.
+      Regex.match?(~r/^\s*@(tag|describetag)\b/, line) ->
+        take_comments(lines, idx - 1, acc)
+
+      true ->
+        acc
     end
   end
 
