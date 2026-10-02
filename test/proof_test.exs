@@ -3049,3 +3049,125 @@ defmodule RomanProofTest do
     end
   end
 end
+
+# Roman to Integer article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all three
+# can coexist in one file.
+defmodule RomToIntReduce do
+  @roman_map %{
+    "I" => 1, "V" => 5, "X" => 10, "L" => 50,
+    "C" => 100, "D" => 500, "M" => 1000
+  }
+
+  @spec roman_to_int(s :: String.t()) :: integer
+  def roman_to_int(s) do
+    {total, _} =
+      Enum.reduce(String.graphemes(s), {0, 0}, fn char, {sum, prev_value} ->
+        current_value = Map.get(@roman_map, char)
+
+        if current_value > prev_value do
+          {sum + current_value - 2 * prev_value, current_value}
+        else
+          {sum + current_value, current_value}
+        end
+      end)
+
+    total
+  end
+end
+
+defmodule RomToIntPat do
+  @spec roman_to_int(s :: String.t()) :: integer
+  def roman_to_int(s) do
+    s |> String.graphemes() |> parse(0)
+  end
+
+  defp parse([], acc), do: acc
+  defp parse(["I", "V" | rest], acc), do: parse(rest, acc + 4)
+  defp parse(["I", "X" | rest], acc), do: parse(rest, acc + 9)
+  defp parse(["X", "L" | rest], acc), do: parse(rest, acc + 40)
+  defp parse(["X", "C" | rest], acc), do: parse(rest, acc + 90)
+  defp parse(["C", "D" | rest], acc), do: parse(rest, acc + 400)
+  defp parse(["C", "M" | rest], acc), do: parse(rest, acc + 900)
+  defp parse(["I" | rest], acc), do: parse(rest, acc + 1)
+  defp parse(["V" | rest], acc), do: parse(rest, acc + 5)
+  defp parse(["X" | rest], acc), do: parse(rest, acc + 10)
+  defp parse(["L" | rest], acc), do: parse(rest, acc + 50)
+  defp parse(["C" | rest], acc), do: parse(rest, acc + 100)
+  defp parse(["D" | rest], acc), do: parse(rest, acc + 500)
+  defp parse(["M" | rest], acc), do: parse(rest, acc + 1000)
+end
+
+defmodule RomToIntRtl do
+  @roman_map %{
+    "I" => 1, "V" => 5, "X" => 10, "L" => 50,
+    "C" => 100, "D" => 500, "M" => 1000
+  }
+
+  @spec roman_to_int(s :: String.t()) :: integer
+  def roman_to_int(s) do
+    s
+    |> String.graphemes()
+    |> Enum.reverse()
+    |> Enum.reduce({0, 0}, fn char, {sum, prev} ->
+      current = Map.get(@roman_map, char)
+
+      if current >= prev do
+        {sum + current, current}
+      else
+        {sum - current, current}
+      end
+    end)
+    |> elem(0)
+  end
+end
+
+defmodule RomToIntProofTest do
+  # Proof suite for the article "Solving LeetCode's Roman to Integer in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @cases [
+    {"III", 3},
+    {"LVIII", 58},
+    {"MCMXCIV", 1994},
+    {"IV", 4},
+    {"IX", 9},
+    {"XL", 40},
+    {"XC", 90},
+    {"CD", 400},
+    {"CM", 900},
+    {"MMMCMXCIX", 3999},
+    {"I", 1},
+    {"", 0}
+  ]
+
+  describe "Roman to Integer: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus every subtractive pair, the max numeral and empty string. When/Where: article examples + edges. How: equality asserts per version. Why: baseline parsing contract.
+    # STAR | Situation: twelve inputs. Task: lock outputs. Action: roman_to_int each on all three. Result: identical correct values everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and edges" do
+      for {s, expected} <- @cases do
+        assert RomToIntReduce.roman_to_int(s) == expected
+        assert RomToIntPat.roman_to_int(s) == expected
+        assert RomToIntRtl.roman_to_int(s) == expected
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CROSS-ARTICLE — every int_to_roman output from the previous article round-trips through all three parsers over the ENTIRE domain 1..3999 (zero failures), proving both directions at once. When/Where: Integer-to-Roman generator (already proven) as oracle. How: full-sweep asserts. Why: strongest equivalence across two articles.
+    # STAR | Situation: every n in 1..3999. Task: prove round-trip. Action: parse int_to_roman(n) with all three. Result: n every time, 0 failures.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "full domain round-trips through all parsers" do
+      failures =
+        Enum.reject(1..3999, fn n ->
+          s = RomanGreedy.int_to_roman(n)
+
+          RomToIntReduce.roman_to_int(s) == n and
+            RomToIntPat.roman_to_int(s) == n and
+            RomToIntRtl.roman_to_int(s) == n
+        end)
+
+      assert failures == []
+    end
+  end
+end
