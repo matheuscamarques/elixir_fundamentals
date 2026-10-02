@@ -37,18 +37,17 @@ fix it, repeat until it is muscle memory.
 
 ```bash
 mix test
-# Result: 52 passed (1 doctest, 51 tests), zero warnings
+# Result: 64 passed, zero warnings
 ```
 
-- Training text: [`ARTICLE.md`](ARTICLE.md) — concept, examples,
-  counterexamples, misconceptions, exercises, answer key per section.
-- Proof suite: [`test/article_proof_test.exs`](test/article_proof_test.exs) —
-  every exercise plus a regression test per documented error.
-- Each documented error is marked `[v1-fix]` in `ARTICLE.md` and grouped
-  under "Errata from v1".
+- Proof suite: [`test/proof_test.exs`](test/proof_test.exs) — the SINGLE
+  `.exs` tuning file: every exercise plus a regression test per documented
+  error, article modules inlined (this repo never uses `/lib`).
+- Each documented error is marked `[v1-fix]` in its test comment and grouped
+  in the hall of shame below.
 
 For agents: run `mix test` first, read the failing assertion message,
-then read the corresponding `ARTICLE.md` section. Do not guess — reproduce.
+then read the corresponding test comment. Do not guess — reproduce.
 
 ## Validated AI mistakes (hall of shame)
 
@@ -68,20 +67,19 @@ then read the corresponding `ARTICLE.md` section. Do not guess — reproduce.
 ## Repo layout
 
 ```text
-ARTICLE.md                    # the training article (corrected, [v1-fix] marked)
-test/article_proof_test.exs   # 51 proof/regression tests, warning-clean
-lib/elixir_fundamentals.ex    # placeholder module
+test/proof_test.exs           # THE tuning file: all proofs, warning-clean
+lib/elixir_fundamentals.ex    # unused placeholder (repo keeps code in test files)
 ```
 
 ## Adding a newly spotted AI mistake
 
 1. Reproduce it in IEx first.
-2. Add a test in `test/article_proof_test.exs` asserting **actual** behavior,
+2. Add a test in `test/proof_test.exs` asserting **actual** behavior,
    with a comment quoting the wrong claim.
 3. If the suite emits a type warning for the intentional counterexample,
    hide the literal via the existing `opaque/1` helper instead of
    weakening the test.
-4. Mark the fix `[v1-fix]`-style in `ARTICLE.md` and append to the Errata.
+4. Mark the fix `[v1-fix]`-style in the test comment.
 5. `mix test` must stay green and warning-free.
 
 ## How to add tests: the generator → prover loop
@@ -98,7 +96,7 @@ This repo runs on a loop you can reuse for any fundamental concept:
    future model training: the test is machine-checkable ground truth, not
    opinion.
 
-Everything lives in `test/article_proof_test.exs`:
+Everything lives in `test/proof_test.exs`:
 
 ```elixir
 describe "section N: name" do
@@ -172,11 +170,17 @@ Private-function checks use `apply/3` instead of a direct call
 **Prover prompt (paste into opencode with the article):**
 
 > Prove every snippet of the article below with ExUnit in
-> `test/article_proof_test.exs`. Each exercise becomes an assert; each
+> `test/proof_test.exs`. Each exercise becomes an assert; each
 > "raises X" becomes an `assert_raise` with the REAL error verified via
-> `mix test`. Where the article is wrong, mark `[v1-fix]`, fix `ARTICLE.md`,
-> and document it in the Errata. `mix test` must stay green and
+> `mix test`. Where the article is wrong, mark `[v1-fix]` in the test
+> comment. `mix test` must stay green and
 > warning-free (reuse the `opaque/1` and `capture_io` patterns already in
 > the file).
 
 Errors are learning — document them, don't hide them.
+
+---
+
+## Author
+
+Matheus de Camargo Marques <matheuscamarques@gmail.com>
