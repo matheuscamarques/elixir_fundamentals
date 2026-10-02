@@ -154,6 +154,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 article error — trim:true removes ALL empties, not edges only. When/Where: article sec.4, Elixir 1.20. How: asserts on real outputs. Why: this exact myth corrupts tokenizers.
     # STAR | Situation: v1 claimed ["a","","b"] and ["a","b","","c"]. Task: prove actual. Action: split with trim:true and without. Result: ["a","b"], ["a","b","c"], full empties list.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "trim: true removes ALL empties, not only edges (article error documented)" do
       # Article claims ["a", "", "b"] and ["a","b","","c"] — actually:
       assert String.split("  a  b  ", " ", trim: true) == ["a", "b"]
@@ -230,6 +231,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — \p without /u does NOT raise on OTP 29. When/Where: article sec.6, Elixir 1.20.1/OTP 29. How: direct =~ asserts. Why: keeps the /u rule while fixing the claimed error type.
     # STAR | Situation: v1 claimed Regex.CompileError for "é". Task: prove actual. Action: match with and without /u. Result: true both times, no raise.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "\\p without /u does NOT raise on Elixir 1.20/OTP29 (article error documented)" do
       # Article claims ** (Regex.CompileError) for "é" =~ ~r/\p{L}/
       assert ("cat" =~ ~r/\p{L}/) == true
@@ -277,6 +279,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — flat_map with a non-enumerable fun RAISES. When/Where: article sec.8. How: assert_raise. Why: AIs repeatedly emit flat_map where map belongs.
     # STAR | Situation: v1 claimed [2,4]. Task: prove the raise. Action: run flat_map with x*2. Result: Protocol.UndefinedError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "flat_map with non-list fun raises (article error documented)" do
       # Article claims Enum.flat_map([1,2], fn x -> x*2 end) == [2,4]
       assert_raise Protocol.UndefinedError, fn ->
@@ -348,6 +351,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — mixed-type sort does NOT raise; Erlang term order applies. When/Where: article sec.11. How: single assert. Why: AIs invent ArgumentError here.
     # STAR | Situation: v1 claimed ArgumentError. Task: prove actual. Action: sort [1, "a", :ok]. Result: [1, :ok, "a"].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "sort of mixed types does NOT raise (article error documented)" do
       # Article claims ** (ArgumentError); term ordering applies instead:
       # number < atom < binary
@@ -417,6 +421,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — reduce/2 EXISTS and sums with first elem as acc. When/Where: article sec.13. How: single assert. Why: prefer explicit reduce/3 but know /2 works.
     # STAR | Situation: v1 claimed FunctionClauseError. Task: prove actual. Action: reduce without initial. Result: 6.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "reduce/2 exists and does NOT raise (article error documented)" do
       # Article claims FunctionClauseError; actually uses first elem as acc:
       assert Enum.reduce([1, 2, 3], fn x, acc -> acc + x end) == 6
@@ -443,6 +448,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — with_index/2 integer offset EXISTS since Elixir 1.12. When/Where: article sec.14. How: single assert. Why: outdated "no offset" knowledge.
     # STAR | Situation: v1 claimed UndefinedFunctionError. Task: prove actual. Action: with_index(["a","b"], 1). Result: [{"a",1},{"b",2}].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "with_index/2 with offset EXISTS (article error documented)" do
       # Article claims UndefinedFunctionError; since Elixir 1.12 offset works:
       assert Enum.with_index(["a", "b"], 1) == [{"a", 1}, {"b", 2}]
@@ -608,6 +614,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover + future AI reader. What: v1 error — log of negative/zero RAISES ArithmeticError, not nan. When/Where: article sec.23. How: assert_raise. Why: AIs hallucinate nan here.
     # STAR | Situation: v1 claimed nan. Task: prove the raise. Action: log(-1) and log(0). Result: ArithmeticError twice.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "log of negative/zero raises (article error documented)" do
       # Article claims "returns nan"; actually raises ArithmeticError:
       assert_raise ArithmeticError, fn -> :math.log(-1) end
@@ -711,6 +718,7 @@ defmodule ArticleProofTest do
     #          │ Map.new()
     #          ▼ %{1 => 1, 2 => 1}
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "D4 article version is BROKEN (documents error); fixed version works" do
       # Article code raises because flat_map fun returns a tuple (not enumerable):
       assert_raise Protocol.UndefinedError, fn ->
@@ -753,10 +761,12 @@ defmodule ArticleProofTest do
   # ============================================================
   # Pipe precedence (section 1 misconception — article error)
   # ============================================================
+  @tag :documented_error
   describe "pipe precedence (article error)" do
     # 5W1H | Who: prover + future AI reader. What: v1 precedence myth — AST shows (1+2) is the pipe's left side; runtime prints 3. When/Where: article sec.1 misconception, Elixir 1.20. How: quote-shape match plus captured IO. Why: precedence myths produce phantom ArithmeticErrors.
     # STAR | Situation: v1 claimed 1+(2|>puts) then raise. Task: prove (1+2)|>puts. Action: match AST, capture IO. Result: shape matches, output "3\n", :ok.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "1 + 2 |> IO.puts() is (1+2) |> puts, prints 3, no error" do
       # Article claims it parses as 1 + (2 |> puts) and raises ArithmeticError.
       # AST proof: left side of |> is (1+2):
@@ -768,6 +778,7 @@ defmodule ArticleProofTest do
     # 5W1H | Who: prover. What: v1 self-contradiction — same replace pipe shown as both error and correct. When/Where: article sec.1 counterexamples. How: direct assert it never raises. Why: contradictory docs teach nothing.
     # STAR | Situation: identical line labeled ❌ and ✅. Task: settle it. Action: run the pipe. Result: "hello elixir", no raise.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "pipe replace counterexample is self-contradictory (article error)" do
       # Article shows the SAME line as both ❌ (ArgumentError) and ✅ (correct).
       # Proof: it never raises:
@@ -1050,6 +1061,7 @@ defmodule InvertedIndexProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE GAP — empty AND query crashes (reduce/2 on []). When/Where: article Step 3 never covers []. How: assert_raise. Why: reduce/2 needs ≥1 element; OR [] is fine.
     # STAR | Situation: search(index, [], :and). Task: prove the crash. Action: run inside assert_raise; contrast OR []. Result: Enum.EmptyError; OR gives [].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_gap
     test "empty AND terms raise Enum.EmptyError (article gap documented)" do
       index = InvertedIndex.build(@docs)
 
@@ -1063,6 +1075,7 @@ defmodule InvertedIndexProofTest do
     # 5W1H | Who: prover. What: ARTICLE GAP — bare `def search` blocks belong to InvertedIndex. When/Where: article Step 3 prints defs with no defmodule. How: function_exported? asserts. Why: as printed, the code does not compile standalone.
     # STAR | Situation: usage calls InvertedIndex.search/3. Task: pin the home module. Action: assert exports. Result: search/3, build/1, build_with_tf/1 all exported.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_gap
     test "search lives in InvertedIndex (article gap documented)" do
       assert function_exported?(InvertedIndex, :search, 3)
       assert function_exported?(InvertedIndex, :build, 1)
@@ -1123,6 +1136,7 @@ defmodule InvertedIndexProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — doc1 scores 2*log(3/2)=0.8109, NOT log(3)=1.0986; order [doc1,doc2,doc3] is right. When/Where: article Step 5 final ranking. How: exact-list assert. Why: the article's headline number is wrong.
     # STAR | Situation: article claims [{"doc1",1.098...},...]. Task: prove actual. Action: rank ["elixir","functional"]. Result: [{"doc1",0.8109...},{"doc2",0.405...},{"doc3",0.405...}].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "rank numbers (article doc1 value corrected)" do
       index = InvertedIndex.build_with_tf(@docs)
 
@@ -1252,6 +1266,11 @@ defmodule TwoSumProofTest do
 
     # 5W1H | Who: reader. What: guard-clause pattern version passes all three examples via complement-keys. When/Where: article alternative recursion. How: equality asserts. Why: guard + complement-key style correctness.
     # STAR | Situation: same three examples. Task: lock outputs. Action: two_sum each. Result: [0,1], [1,2], [0,1].
+    # FLOW | two_sum([3,2,4], 6)   (TwoSumPattern — map holds COMPLEMENTS)
+    #        {3,0}: is_map_key(%{}, 3)?            no  → put 6-3=3 → %{3=>0}
+    #        {2,1}: is_map_key(%{3=>0}, 2)?        no  → put 6-2=4 → %{3=>0,4=>1}
+    #        {4,2}: is_map_key(%{3=>0,4=>1}, 4)?   yes → [map[4], 2]
+    #        ▼ [1,2]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "pattern-matching version passes the three examples" do
       assert TwoSumPattern.two_sum([2, 7, 11, 15], 9) == [0, 1]
@@ -1274,21 +1293,17 @@ defmodule TwoSumProofTest do
     end
   end
 
+  @tag :documented_gap
   describe "Two Sum: no-solution contracts (article gaps documented)" do
     # 5W1H | Who: prover + future AI reader. What: the three "equivalent" solutions DISAGREE with no solution — brute nil, rec [], reduce_while leaks the map, pattern crashes (missing [] clause). When/Where: article assumes exactly one solution, never covers miss. How: asserts + assert_raise. Why: hidden contract divergence.
     # STAR | Situation: [1,2,3]/100 has no pair. Task: prove each behavior. Action: call all four. Result: nil, [], %{1=>0,2=>1,3=>2}, FunctionClauseError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
-    # FLOW | two_sum([3,2,4], 6)   (TwoSumPattern — map holds COMPLEMENTS)
-    #        {3,0}: is_map_key(%{}, 3)?            no  → put 6-3=3 → %{3=>0}
-    #        {2,1}: is_map_key(%{3=>0}, 2)?        no  → put 6-2=4 → %{3=>0,4=>1}
-    #        {4,2}: is_map_key(%{3=>0,4=>1}, 4)?   yes → [map[4], 2]
-    #        ▼ [1,2]
-    #
     # FLOW | two_sum([1,2,3], 100)   (no solution — the four diverge)
     #        Brute        → [i,j] never matches → Enum.find_value returns nil → nil
     #        Rec          → find([], …, map, 3) hits find([], …) → []
     #        ReduceWhile  → never halts → the MAP leaks: %{1=>0, 2=>1, 3=>2}
     #        Pattern      → helper([], …) has NO clause → FunctionClauseError
+    @tag :documented_gap
     test "no-solution inputs diverge per implementation" do
       assert TwoSumBrute.two_sum([1, 2, 3], 100) == nil
       assert TwoSumRec.two_sum([1, 2, 3], 100) == []
@@ -1499,6 +1514,7 @@ defmodule MedianProofTest do
     end
   end
 
+  @tag :documented_gap
   describe "Median: sentinel limits and empty inputs (gaps documented)" do
     # 5W1H | Who: prover + future AI reader. What: BEHAVIORAL DIFFERENCE — float sentinels assume inputs within ±1e308; beyond that the partition logic corrupts and raises RuntimeError, while atom sentinels stay exact (only float conversion can overflow). When/Where: article never bounds its inputs. How: assert_raise on 10^400. Why: sentinel choice is a hidden precondition.
     # STAR | Situation: [10^400]/[]. Task: prove divergence. Action: run both versions. Result: float raises RuntimeError("No valid partition found"); atom raises ArithmeticError (honest 1.0e400 overflow).
@@ -1512,6 +1528,7 @@ defmodule MedianProofTest do
     #                        range 0..0 exhausted → result is a 2-tuple
     #                        case {left1,right1,left2,right2,total} does not match → fallback
     #                        ✗ RuntimeError "No valid partition found"
+    @tag :documented_error
     test "sentinels diverge beyond float range" do
       big = 10 ** 400
 
@@ -1527,6 +1544,7 @@ defmodule MedianProofTest do
     # 5W1H | Who: prover. What: both-empty inputs diverge — brute/atom raise ArithmeticError (nil+nil, :neg_infinity+:infinity), float version silently returns 0.0. When/Where: article never covers degenerate input. How: asserts + assert_raise. Why: undefined-median handling differs.
     # STAR | Situation: ([], []). Task: prove each behavior. Action: run all three. Result: ArithmeticError, ArithmeticError, 0.0.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "both-empty inputs diverge per implementation" do
       assert_raise ArithmeticError, fn ->
         MedianBrute.find_median_sorted_arrays([], [])
@@ -1705,6 +1723,7 @@ defmodule AddTwoNumbersProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Add Two Numbers: reversed-output bugs (article errors documented)" do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — integer-conversion returns digits FORWARD ([8,0,7]) because build_list prepends least-significant-first. When/Where: article Solution 1. How: assert actual + refute expected. Why: prepend-direction confusion.
     # STAR | Situation: 342+465=807, article implies [7,0,8]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
@@ -1715,6 +1734,7 @@ defmodule AddTwoNumbersProofTest do
     #        sum = 807
     #        build_list(807, nil): 807→7 | 80→0 | 8→8 | 0→stop
     #        ▼ LN{8, LN{0, LN{7}}} = [8,0,7]     ← article error: LSB prepended, never reversed
+    @tag :documented_error
     test "conversion version returns forward order" do
       assert AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
       refute AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
@@ -1729,6 +1749,7 @@ defmodule AddTwoNumbersProofTest do
     #        8  → acc = LN{8, LN{0, LN{7}}}
     #        base case returns acc AS-IS — never reversed
     #        ▼ [8,0,7]                     ← article error: 807 reads backwards
+    @tag :documented_error
     test "accumulator version returns forward order" do
       assert AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
       refute AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
@@ -1743,6 +1764,7 @@ defmodule AddTwoNumbersProofTest do
     #        do_add pairs head-to-head: 8+0=8, then 1+0=1 → acc = [1,8]
     #        Enum.reverse(acc) = [8,1]
     #        ▼ [8,1]   → reads as 18, not 81     ← article error: reverse-then-zip only aligns equal lengths
+    @tag :documented_error
     test "plain-list version misaligns uneven lengths" do
       assert AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [8, 1]
       refute AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [1, 8]
@@ -1874,6 +1896,7 @@ defmodule SubstrProofTest do
     # 5W1H | Who: prover + future AI reader. What: MINOR WART — brute force on "" still returns 0 but emits TWO decreasing-Range warnings (0..-1 and inner (i+1)..n); the article credits Enum.max(fn->0 end) yet omits this noise. When/Where: article Solution 1 on empty input, Elixir 1.20. How: capture stderr, assert result + warning text. Why: keeps suite output clean and documents the wart.
     # STAR | Situation: length_of_longest_substring(""). Task: prove 0 AND the warnings. Action: run with stderr captured. Result: 0 with "Range" warnings present.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :wart
     test "brute force on empty string warns but returns zero" do
       output =
         ExUnit.CaptureIO.capture_io(:stderr, fn ->
@@ -2029,10 +2052,12 @@ defmodule PalinProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Palindrome: critical article errors (documented)" do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — the printed expand/4 guard calls Enum.at/2, which is NOT guard-safe: the flagship solution does not compile as printed. When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: guard-safe boundary every Elixir dev must know.
     # STAR | Situation: verbatim guard with Enum.at. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote Enum.at/2 inside guard).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "verbatim expand guard does not compile" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_expand_src) end)})
@@ -2046,6 +2071,7 @@ defmodule PalinProofTest do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim Manacher returns "" for EVERY input: `p = new_p` rebinds inside the fn body so radius updates never escape the iteration, and the final scan reads the pristine all-zero array (max radius 0, length 0). When/Where: article Solution 3. How: runtime-compile verbatim source (stderr captured), assert "" on three inputs. Why: rebinding-vs-threading through Enum acc. Fix: thread p as {c, r, p} and scan the returned array.
     # STAR | Situation: verbatim Manacher on "babad", "cbbd", "racecar". Task: prove empty results. Action: compile source, run each. Result: "", "", "".
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "verbatim Manacher always returns empty string" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:mods, Code.compile_string(@verbatim_manacher_src)})
@@ -2212,6 +2238,7 @@ defmodule ZigzagProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Zigzag: stub solution (article error documented)" do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — Solution 3 is an unfinished STUB: the unfold step body is only comments, so it halts immediately and every row is ""; both examples return "". When/Where: article "Mathematical Pattern". How: runtime-compile verbatim source (stderr captured for its unused-var warnings), assert "". Why: sketches presented as implementations.
     # STAR | Situation: verbatim math solution on both LeetCode examples. Task: prove empty results. Action: compile source, convert each. Result: "", "".
@@ -2221,6 +2248,7 @@ defmodule ZigzagProofTest do
     #        the step body evaluates to nil → unfold halts at element 0 → Enum.take_while → []
     #        every row builds ""
     #        ▼ "" for ALL inputs (article error: the "Mathematical Pattern" is a stub)
+    @tag :documented_error
     test "math-pattern stub always returns empty string" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:mods, Code.compile_string(@verbatim_math_src)})
@@ -2383,6 +2411,7 @@ defmodule ReverseIntProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Reverse Integer: pre-check asymmetry (documented)" do
     # 5W1H | Who: prover + future AI reader. What: SUBTLE — the safe-math `digit > 7` threshold encodes only MAX (…847); a reversal of exactly 2147483648 with negative sign is the valid MIN, but the pre-check returns 0. Unreachable under LeetCode constraints (it needs abs(x) = 8463847412), provable only with out-of-range input since Elixir has big ints. When/Where: article Solution 4. How: assert divergence on x = -8463847412. Why: thresholds copied from editorials carry hidden asymmetry.
     # STAR | Situation: x = -8463847412 (outside constraints). Task: expose asymmetry. Action: reverse with math vs safe versions. Result: -2147483648 vs 0.
@@ -2393,6 +2422,7 @@ defmodule ReverseIntProofTest do
     #        RevSafe : res grows: …214748364 → next digit 8 > 7 → pre-check fires
     #                  → returns 0, even though -2147483648 is the valid MIN
     #        ▼ -2147483648 vs 0
+    @tag :documented_error
     test "safe pre-check is exact only within constraints" do
       assert RevMath.reverse(-8_463_847_412) == -2_147_483_648
       assert RevSafe.reverse(-8_463_847_412) == 0
@@ -2553,6 +2583,7 @@ defmodule AtoiProofTest do
     end
   end
 
+  @tag :documented_error
   describe "atoi: whitespace divergence (article inconsistency documented)" do
     # 5W1H | Who: prover + future AI reader. What: INTERNAL CONTRADICTION — the regex version skips ALL whitespace (\s: tab, newline), while the article's own pitfall rule says only ' ' counts and Solutions 2/3 enforce exactly that. When/Where: article Solution 1 vs its pitfalls + Solutions 2/3. How: assert divergence on "\t42" and "\n-42". Why: \s vs " " is a real spec fork.
     # STAR | Situation: leading tab/newline inputs. Task: prove the split. Action: my_atoi on all three. Result: regex 42/-42 vs 0/0 on the other two.
@@ -2562,6 +2593,7 @@ defmodule AtoiProofTest do
     #        AtoiRec   : skip_whitespace only skips " " → "\t" is not a digit → 0
     #        AtoiParse : String.trim_leading(s, " ") leaves "\t42" → Integer.parse → :error → 0
     #        ▼ 42  vs  0  vs  0
+    @tag :documented_error
     test "tab and newline split the implementations" do
       assert AtoiRegex.my_atoi("\t42") == 42
       assert AtoiRec.my_atoi("\t42") == 0
@@ -2714,6 +2746,7 @@ defmodule PalNumProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Palindrome Number: article errors (documented)" do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — two-pointer on a SINGLE digit builds 0..-1 (decreasing range, warns) and compares the char against out-of-range nil, returning false for true palindromes 0-9. When/Where: article Solution 2, n = 1. How: assert false with stderr captured. Why: single-element range edge.
     # STAR | Situation: is_palindrome(5). Task: prove the wrong answer. Action: run with stderr captured. Result: false (plus Range warning).
@@ -2735,6 +2768,7 @@ defmodule PalNumProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE'S OWN TRACE ADMITS IT — first half-reversal compares the ORIGINAL x against the reversed half (121 vs 12), so every multi-digit palindrome returns false. When/Where: article Solution 4 before its self-correction. How: assert false on known palindromes. Why: compares wrong halves.
     # STAR | Situation: 121, 1221, 12321, 1001. Task: prove the failure. Action: is_palindrome each. Result: false, false, false, false.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    @tag :documented_error
     test "first half-reversal rejects real palindromes" do
       for x <- [121, 1221, 12321, 1001] do
         assert PalHalfBroken.is_palindrome(x) == false
@@ -2748,6 +2782,7 @@ defmodule PalNumProofTest do
     #        Elixir div truncates toward zero → -12
     #        (floor_div would give -13 — the article's claim)
     #        ▼ -12,  and rem(-121, 10) → -1
+    @tag :documented_error
     test "negative div truncates toward zero" do
       assert div(-121, 10) == -12
       refute div(-121, 10) == -13
@@ -3032,6 +3067,7 @@ defmodule RegexProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Regex: broken table init (article error documented)" do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim bottom-up DP crashes on ANY input: nested `for i <- 0..m, into: %{} do <map>` tries to collect maps as entries (`:maps.from_list` gets maps, not tuples) → ArgumentError before any matching. When/Where: article Solution 3 table init. How: runtime-compile verbatim source, assert_raise on apply. Why: for-into shape must yield entries, not collections. Fix: `for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}`.
     # STAR | Situation: verbatim DP on ("aa", "a"). Task: prove the crash. Action: compile source, is_match. Result: ArgumentError.
@@ -3041,6 +3077,7 @@ defmodule RegexProofTest do
     #        the OUTER body returns a MAP; Enum.into(%{}, [map, map, …]) needs {k,v} tuples
     #        ✗ ArgumentError   (article error)
     #        FIX: for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}
+    @tag :documented_error
     test "verbatim bottom-up crashes on table init" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:mods, Code.compile_string(@verbatim_dp_src)})
@@ -3219,6 +3256,7 @@ defmodule WaterProofTest do
     end
   end
 
+  @tag :documented_error
   describe "Water: broken destructure (article error documented)" do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim reduce_while destructures `{_, max_area}` but the accumulator is always the 3-tuple {left, right, best}, so EVERY input raises MatchError. When/Where: article Solution 2 alternative. How: assert_raise on three inputs. Why: acc shape must match the pattern.
     # STAR | Situation: verbatim version on [1,1], the big example, [4,3,2,1,4]. Task: prove the crash. Action: max_area each. Result: MatchError thrice.
@@ -3229,6 +3267,7 @@ defmodule WaterProofTest do
     #        the final destructure is {_, max_area}  — a 2-tuple pattern
     #        ✗ MatchError on EVERY input   (article error)
     #        FIX: {_, _, max_area} = …
+    @tag :documented_error
     test "verbatim reduce_while raises MatchError on any input" do
       for h <- [[1, 1], [1, 8, 6, 2, 5, 4, 8, 3, 7], [4, 3, 2, 1, 4]] do
         assert_raise MatchError, fn ->
