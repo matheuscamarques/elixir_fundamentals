@@ -5155,3 +5155,147 @@ defmodule FixesProofTest do
     end
   end
 end
+
+# Merge Two Sorted Lists article code, inlined here (this repo never uses
+# /lib). NOTE: the article names versions `Solution`; renamed here.
+# ListNode is shared with the Add Two Numbers section (same struct).
+# The dummy version matches `tail` as %ListNode{} (article leaves it
+# unpinned, which warns) — behavior identical, suite stays clean.
+defmodule MergeRec do
+  @spec merge_two_lists(list1 :: ListNode.t() | nil, list2 :: ListNode.t() | nil) :: ListNode.t() | nil
+  def merge_two_lists(nil, list2), do: list2
+  def merge_two_lists(list1, nil), do: list1
+
+  def merge_two_lists(%ListNode{val: v1} = list1, %ListNode{val: v2} = list2) do
+    if v1 <= v2 do
+      %ListNode{list1 | next: merge_two_lists(list1.next, list2)}
+    else
+      %ListNode{list2 | next: merge_two_lists(list1, list2.next)}
+    end
+  end
+end
+
+defmodule MergeDummyBroken do
+  def merge_two_lists(list1, list2) do
+    dummy = %ListNode{val: 0}
+    _tail = merge(list1, list2, dummy)
+    dummy.next
+  end
+
+  defp merge(nil, list2, %ListNode{} = tail) do
+    %ListNode{tail | next: list2}
+  end
+
+  defp merge(list1, nil, %ListNode{} = tail) do
+    %ListNode{tail | next: list1}
+  end
+
+  defp merge(%ListNode{val: v1} = list1, %ListNode{val: v2} = list2, %ListNode{} = tail) do
+    if v1 <= v2 do
+      new_tail = %ListNode{tail | next: list1}
+      merge(list1.next, list2, new_tail)
+    else
+      new_tail = %ListNode{tail | next: list2}
+      merge(list1, list2.next, new_tail)
+    end
+  end
+end
+
+defmodule MergeAcc do
+  def merge_two_lists(list1, list2) do
+    list1
+    |> collect_values(list2, [])
+    |> build_list()
+  end
+
+  defp collect_values(nil, nil, acc), do: Enum.reverse(acc)
+
+  defp collect_values(nil, list2, acc) do
+    collect_values(nil, list2.next, [list2.val | acc])
+  end
+
+  defp collect_values(list1, nil, acc) do
+    collect_values(list1.next, nil, [list1.val | acc])
+  end
+
+  defp collect_values(%ListNode{val: v1} = l1, %ListNode{val: v2} = l2, acc) do
+    if v1 <= v2 do
+      collect_values(l1.next, l2, [v1 | acc])
+    else
+      collect_values(l1, l2.next, [v2 | acc])
+    end
+  end
+
+  defp build_list(values) do
+    Enum.reduce(Enum.reverse(values), nil, fn val, acc ->
+      %ListNode{val: val, next: acc}
+    end)
+  end
+end
+
+defmodule MergeErlang do
+  def merge_two_lists(list1, list2) do
+    list1
+    |> to_list()
+    |> :lists.merge(to_list(list2))
+    |> to_linked_list()
+  end
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: val, next: next}), do: [val | to_list(next)]
+
+  defp to_linked_list(values) do
+    Enum.reduce(Enum.reverse(values), nil, fn val, acc ->
+      %ListNode{val: val, next: acc}
+    end)
+  end
+end
+
+defmodule MergeProofTest do
+  # Proof suite for the article "Solving LeetCode's Merge Two Sorted Lists in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Merge: correct versions" do
+    # 5W1H | Who: reader. What: direct recursion passes the LeetCode examples plus uneven, negative and duplicate inputs. When/Where: article Solution 1. How: struct→list asserts. Why: baseline greedy-merge correctness.
+    # STAR | Situation: [1,2,4]+[1,3,4], [], [0], uneven, negatives. Task: lock outputs. Action: merge_two_lists each. Result: [1,1,2,3,4,4], [], [0], [1,1,2,3,4,5], [-3,-2,-1,0].
+    # FLOW | ([1,2,4],[1,3,4]): 1<=1 keep l1 → 2<=1? no keep l2(1) → 2<=3 keep → 4<=3? no keep l2(3) → 4<=4 keep → l1 exhausted → rest [4]
+    #          ▼ [1,1,2,3,4,4]
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive version passes examples and edges" do
+      assert MergeRec.merge_two_lists(from_list([1, 2, 4]), from_list([1, 3, 4])) |> to_list() == [1, 1, 2, 3, 4, 4]
+      assert MergeRec.merge_two_lists(from_list([]), from_list([])) |> to_list() == []
+      assert MergeRec.merge_two_lists(from_list([]), from_list([0])) |> to_list() == [0]
+      assert MergeRec.merge_two_lists(from_list([1]), from_list([1, 2, 3, 4, 5])) |> to_list() == [1, 1, 2, 3, 4, 5]
+      assert MergeRec.merge_two_lists(from_list([-3, -1]), from_list([-2, 0])) |> to_list() == [-3, -2, -1, 0]
+    end
+
+    # 5W1H | Who: reader. What: accumulator and :lists.merge versions agree with direct recursion on every case above. When/Where: article accumulator version + Erlang interop. How: equality asserts. Why: proves alternative constructions converge.
+    # STAR | Situation: same five inputs. Task: lock agreement. Action: merge_two_lists each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "accumulator and erlang versions agree" do
+      for {a, b} <- [ {[1, 2, 4], [1, 3, 4]}, {[], []}, {[], [0]}, {[1], [1, 2, 3, 4, 5]}, {[-3, -1], [-2, 0]} ] do
+        expected = MergeRec.merge_two_lists(from_list(a), from_list(b)) |> to_list()
+        assert MergeAcc.merge_two_lists(from_list(a), from_list(b)) |> to_list() == expected
+        assert MergeErlang.merge_two_lists(from_list(a), from_list(b)) |> to_list() == expected
+      end
+    end
+  end
+
+  describe "Merge: dummy flaw (article admits it, documented)" do
+    # 5W1H | Who: prover + future AI reader. What: the threaded-dummy version ALWAYS returns nil: `%ListNode{tail | next: …}` builds new nodes, but immutable `dummy` never changes, so `dummy.next` stays nil — the article itself explains this flaw. When/Where: article Solution 2. How: assert nil on examples incl. a case ([],[0]) where nil is wrong. Why: immutable dummy anchors nothing.
+    # STAR | Situation: verbatim dummy version on ex1, ([],[]), ([],[0]). Task: prove empty results. Action: merge_two_lists each. Result: nil, nil, nil (last one should be [0]).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "dummy version always returns nil" do
+      assert MergeDummyBroken.merge_two_lists(from_list([1, 2, 4]), from_list([1, 3, 4])) == nil
+      assert MergeDummyBroken.merge_two_lists(from_list([]), from_list([])) == nil
+      assert MergeDummyBroken.merge_two_lists(from_list([]), from_list([0])) == nil
+    end
+  end
+end
