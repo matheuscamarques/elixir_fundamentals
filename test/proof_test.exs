@@ -761,8 +761,8 @@ defmodule ArticleProofTest do
   # ============================================================
   # Pipe precedence (section 1 misconception — article error)
   # ============================================================
-  @tag :documented_error
   describe "pipe precedence (article error)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: v1 precedence myth — AST shows (1+2) is the pipe's left side; runtime prints 3. When/Where: article sec.1 misconception, Elixir 1.20. How: quote-shape match plus captured IO. Why: precedence myths produce phantom ArithmeticErrors.
     # STAR | Situation: v1 claimed 1+(2|>puts) then raise. Task: prove (1+2)|>puts. Action: match AST, capture IO. Result: shape matches, output "3\n", :ok.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -1293,8 +1293,8 @@ defmodule TwoSumProofTest do
     end
   end
 
-  @tag :documented_gap
   describe "Two Sum: no-solution contracts (article gaps documented)" do
+    @describetag :documented_gap
     # 5W1H | Who: prover + future AI reader. What: the three "equivalent" solutions DISAGREE with no solution — brute nil, rec [], reduce_while leaks the map, pattern crashes (missing [] clause). When/Where: article assumes exactly one solution, never covers miss. How: asserts + assert_raise. Why: hidden contract divergence.
     # STAR | Situation: [1,2,3]/100 has no pair. Task: prove each behavior. Action: call all four. Result: nil, [], %{1=>0,2=>1,3=>2}, FunctionClauseError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -1514,8 +1514,8 @@ defmodule MedianProofTest do
     end
   end
 
-  @tag :documented_gap
   describe "Median: sentinel limits and empty inputs (gaps documented)" do
+    @describetag :documented_gap
     # 5W1H | Who: prover + future AI reader. What: BEHAVIORAL DIFFERENCE — float sentinels assume inputs within ±1e308; beyond that the partition logic corrupts and raises RuntimeError, while atom sentinels stay exact (only float conversion can overflow). When/Where: article never bounds its inputs. How: assert_raise on 10^400. Why: sentinel choice is a hidden precondition.
     # STAR | Situation: [10^400]/[]. Task: prove divergence. Action: run both versions. Result: float raises RuntimeError("No valid partition found"); atom raises ArithmeticError (honest 1.0e400 overflow).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -1723,8 +1723,8 @@ defmodule AddTwoNumbersProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Add Two Numbers: reversed-output bugs (article errors documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — integer-conversion returns digits FORWARD ([8,0,7]) because build_list prepends least-significant-first. When/Where: article Solution 1. How: assert actual + refute expected. Why: prepend-direction confusion.
     # STAR | Situation: 342+465=807, article implies [7,0,8]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -2052,8 +2052,8 @@ defmodule PalinProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Palindrome: critical article errors (documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — the printed expand/4 guard calls Enum.at/2, which is NOT guard-safe: the flagship solution does not compile as printed. When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: guard-safe boundary every Elixir dev must know.
     # STAR | Situation: verbatim guard with Enum.at. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote Enum.at/2 inside guard).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -2238,8 +2238,8 @@ defmodule ZigzagProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Zigzag: stub solution (article error documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — Solution 3 is an unfinished STUB: the unfold step body is only comments, so it halts immediately and every row is ""; both examples return "". When/Where: article "Mathematical Pattern". How: runtime-compile verbatim source (stderr captured for its unused-var warnings), assert "". Why: sketches presented as implementations.
     # STAR | Situation: verbatim math solution on both LeetCode examples. Task: prove empty results. Action: compile source, convert each. Result: "", "".
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -2411,8 +2411,8 @@ defmodule ReverseIntProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Reverse Integer: pre-check asymmetry (documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: SUBTLE — the safe-math `digit > 7` threshold encodes only MAX (…847); a reversal of exactly 2147483648 with negative sign is the valid MIN, but the pre-check returns 0. Unreachable under LeetCode constraints (it needs abs(x) = 8463847412), provable only with out-of-range input since Elixir has big ints. When/Where: article Solution 4. How: assert divergence on x = -8463847412. Why: thresholds copied from editorials carry hidden asymmetry.
     # STAR | Situation: x = -8463847412 (outside constraints). Task: expose asymmetry. Action: reverse with math vs safe versions. Result: -2147483648 vs 0.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -2583,8 +2583,8 @@ defmodule AtoiProofTest do
     end
   end
 
-  @tag :documented_error
   describe "atoi: whitespace divergence (article inconsistency documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: INTERNAL CONTRADICTION — the regex version skips ALL whitespace (\s: tab, newline), while the article's own pitfall rule says only ' ' counts and Solutions 2/3 enforce exactly that. When/Where: article Solution 1 vs its pitfalls + Solutions 2/3. How: assert divergence on "\t42" and "\n-42". Why: \s vs " " is a real spec fork.
     # STAR | Situation: leading tab/newline inputs. Task: prove the split. Action: my_atoi on all three. Result: regex 42/-42 vs 0/0 on the other two.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -2746,8 +2746,8 @@ defmodule PalNumProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Palindrome Number: article errors (documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — two-pointer on a SINGLE digit builds 0..-1 (decreasing range, warns) and compares the char against out-of-range nil, returning false for true palindromes 0-9. When/Where: article Solution 2, n = 1. How: assert false with stderr captured. Why: single-element range edge.
     # STAR | Situation: is_palindrome(5). Task: prove the wrong answer. Action: run with stderr captured. Result: false (plus Range warning).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -3067,8 +3067,8 @@ defmodule RegexProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Regex: broken table init (article error documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim bottom-up DP crashes on ANY input: nested `for i <- 0..m, into: %{} do <map>` tries to collect maps as entries (`:maps.from_list` gets maps, not tuples) → ArgumentError before any matching. When/Where: article Solution 3 table init. How: runtime-compile verbatim source, assert_raise on apply. Why: for-into shape must yield entries, not collections. Fix: `for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}`.
     # STAR | Situation: verbatim DP on ("aa", "a"). Task: prove the crash. Action: compile source, is_match. Result: ArgumentError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -3256,8 +3256,8 @@ defmodule WaterProofTest do
     end
   end
 
-  @tag :documented_error
   describe "Water: broken destructure (article error documented)" do
+    @describetag :documented_error
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim reduce_while destructures `{_, max_area}` but the accumulator is always the 3-tuple {left, right, best}, so EVERY input raises MatchError. When/Where: article Solution 2 alternative. How: assert_raise on three inputs. Why: acc shape must match the pattern.
     # STAR | Situation: verbatim version on [1,1], the big example, [4,3,2,1,4]. Task: prove the crash. Action: max_area each. Result: MatchError thrice.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
