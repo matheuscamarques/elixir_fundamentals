@@ -5649,3 +5649,237 @@ defmodule MergeKProofTest do
     end
   end
 end
+
+# Swap Nodes in Pairs article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here.
+# ListNode is shared with the Add Two Numbers section (same struct).
+# SwapAccFixed is a FIX by the prover: the article's accumulator version
+# builds pairs in the wrong order; prepending swapped pairs then reversing
+# the whole chain restores [2,1,4,3].
+defmodule SwapRec do
+  @spec swap_pairs(head :: ListNode.t() | nil) :: ListNode.t() | nil
+  def swap_pairs(nil), do: nil
+  def swap_pairs(%ListNode{next: nil} = single), do: single
+
+  # NOTE: `second` pinned as struct (verbatim leaves it dynamic, which the
+  # type checker flags) — behavior identical: clause 2 already took nil.
+  def swap_pairs(%ListNode{next: %ListNode{} = second} = first) do
+    rest = swap_pairs(second.next)
+    %ListNode{second | next: %ListNode{first | next: rest}}
+  end
+end
+
+defmodule SwapAccBroken do
+  def swap_pairs(head) do
+    {result, _} = do_swap(head, nil)
+    result
+  end
+
+  defp do_swap(nil, acc), do: {acc, nil}
+  defp do_swap(%ListNode{next: nil} = single, acc), do: {prepend(single, acc), nil}
+
+  defp do_swap(%ListNode{next: second} = first, acc) do
+    rest = second.next
+    new_acc = prepend(first, prepend(second, acc))
+    do_swap(rest, new_acc)
+  end
+
+  # NOTE: `node` pinned as struct (verbatim leaves it dynamic, which the
+  # type checker flags) — behavior identical.
+  defp prepend(%ListNode{} = node, acc) do
+    %ListNode{node | next: acc}
+  end
+end
+
+defmodule SwapAccFixed do
+  def swap_pairs(head) do
+    head |> do_swap(nil) |> reverse_list(nil)
+  end
+
+  defp do_swap(nil, acc), do: acc
+  defp do_swap(%ListNode{next: nil} = single, acc), do: %ListNode{single | next: acc}
+
+  defp do_swap(%ListNode{next: %ListNode{} = second} = first, acc) do
+    do_swap(second.next, %ListNode{first | next: %ListNode{second | next: acc}})
+  end
+
+  defp reverse_list(nil, acc), do: acc
+  defp reverse_list(%ListNode{val: v, next: n}, acc), do: reverse_list(n, %ListNode{val: v, next: acc})
+end
+
+defmodule SwapNodes do
+  def swap_pairs(head) do
+    head |> to_list() |> swap_list_pairs() |> build_list()
+  end
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{next: next} = node), do: [node | to_list(next)]
+
+  defp swap_list_pairs([]), do: []
+  defp swap_list_pairs([a]), do: [a]
+  defp swap_list_pairs([a, b | rest]), do: [b, a | swap_list_pairs(rest)]
+
+  defp build_list([]), do: nil
+  defp build_list([%ListNode{} = node | rest]) do
+    %ListNode{node | next: build_list(rest)}
+  end
+end
+
+defmodule SwapProofTest do
+  # Proof suite for the article "Solving LeetCode's Swap Nodes in Pairs in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Swap: correct versions" do
+    # 5W1H | Who: reader. What: recursive version passes the LeetCode examples plus odd-length lists. When/Where: article Solution 1. How: struct→list asserts. Why: baseline pair-swap correctness.
+    # STAR | Situation: [1,2,3,4], [], [1], [1,2,3], [1..5]. Task: lock outputs. Action: swap_pairs each. Result: [2,1,4,3], [], [1], [2,1,3], [2,1,4,3,5].
+    # FLOW | ([1,2,3,4]): swap rest [3,4]→[4,3] first, then {2→[4,3]} under {1}: second(2).next={1,{4,{3,nil}}}
+    #          ▼ [2,1,4,3]
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive version passes examples and edges" do
+      assert SwapRec.swap_pairs(from_list([1, 2, 3, 4])) |> to_list() == [2, 1, 4, 3]
+      assert SwapRec.swap_pairs(from_list([])) |> to_list() == []
+      assert SwapRec.swap_pairs(from_list([1])) |> to_list() == [1]
+      assert SwapRec.swap_pairs(from_list([1, 2, 3])) |> to_list() == [2, 1, 3]
+      assert SwapRec.swap_pairs(from_list([1, 2, 3, 4, 5])) |> to_list() == [2, 1, 4, 3, 5]
+    end
+
+    # 5W1H | Who: reader. What: nodes-list version and FIXED accumulator agree with recursion everywhere. When/Where: article nodes-list version + prover acc fix. How: equality asserts. Why: proves alternative constructions converge.
+    # STAR | Situation: same five inputs. Task: lock agreement. Action: swap_pairs each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "nodes-list and fixed accumulator agree" do
+      for l <- [[1, 2, 3, 4], [], [1], [1, 2, 3], [1, 2, 3, 4, 5]] do
+        expected = SwapRec.swap_pairs(from_list(l)) |> to_list()
+        assert SwapNodes.swap_pairs(from_list(l)) |> to_list() == expected
+        assert SwapAccFixed.swap_pairs(from_list(l)) |> to_list() == expected
+      end
+    end
+  end
+
+  describe "Swap: accumulator flaw (article admits it, documented)" do
+    # 5W1H | Who: prover + future AI reader. What: the article's accumulator version returns pairs in the WRONG global order ([3,4,1,2] instead of [2,1,4,3]) — prepending pairs without a final reverse. When/Where: article Solution 2 (self-flagged as flawed). How: exact-list asserts. Why: prepend-then-stop reverses pair order too.
+    # STAR | Situation: verbatim accumulator on [1,2,3,4], [1,2,3], [1..5]. Task: prove actual outputs. Action: swap_pairs each. Result: [3,4,1,2], [3,1,2], [5,3,4,1,2].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "accumulator version misorders pairs" do
+      assert SwapAccBroken.swap_pairs(from_list([1, 2, 3, 4])) |> to_list() == [3, 4, 1, 2]
+      assert SwapAccBroken.swap_pairs(from_list([1, 2, 3])) |> to_list() == [3, 1, 2]
+      assert SwapAccBroken.swap_pairs(from_list([1, 2, 3, 4, 5])) |> to_list() == [5, 3, 4, 1, 2]
+    end
+  end
+end
+
+# Reverse Nodes in k-Group article code, inlined here (this repo never uses
+# /lib). NOTE: the article names versions `Solution`; renamed here.
+# The iterative dummy version is compiled from a verbatim source string (see
+# below): `group_prev.next = …` mutation does not exist in Elixir.
+defmodule KGroupSol1 do
+  @spec reverse_k_group(head :: ListNode.t() | nil, k :: integer) :: ListNode.t() | nil
+  def reverse_k_group(head, k) do
+    cond do
+      list_length(0, head) < k -> head
+      true -> head |> drop(k) |> reverse_k_group(k) |> reverse_list(head, k)
+    end
+  end
+
+  def reverse_list(acc, _, 0), do: acc
+  # NOTE: `list` pinned as struct (verbatim leaves it dynamic, which the
+  # type checker flags) — behavior identical.
+  def reverse_list(acc, %ListNode{} = list, k) do
+    reverse_list(%ListNode{list | next: acc}, list.next, k - 1)
+  end
+
+  def drop(nil, _), do: nil
+  def drop(head, 0), do: head
+  def drop(head, n), do: drop(head.next, n - 1)
+
+  def list_length(acc, nil), do: acc
+  def list_length(acc, head), do: list_length(acc + 1, head.next)
+end
+
+defmodule KGroupProofTest do
+  # Proof suite for the article "Solving LeetCode's Reverse Nodes in k-Group
+  # in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  # Iterative dummy version VERBATIM (renamed module only): `group_prev.next`
+  # and `new_tail.next` assignments are imperative mutation.
+  @verbatim_dummy_src """
+  defmodule CkVerbatimKGroupDummy do
+    def reverse_k_group(head, k) do
+      dummy = %ListNode{val: 0, next: head}
+      do_reverse(dummy, k, dummy)
+      dummy.next
+    end
+    defp do_reverse(group_prev, k, _dummy) do
+      kth = find_kth(group_prev, k)
+      if kth == nil do
+        group_prev
+      else
+        group_next = kth.next
+        {new_head, new_tail} = reverse_segment(group_prev.next, k)
+        group_prev.next = new_head
+        new_tail.next = group_next
+        do_reverse(new_tail, k, nil)
+      end
+    end
+    defp find_kth(node, 0), do: node
+    defp find_kth(nil, _), do: nil
+    defp find_kth(node, k), do: find_kth(node.next, k - 1)
+    defp reverse_segment(head, k) do
+      reverse_segment(head, k, nil)
+    end
+    defp reverse_segment(node, 0, acc), do: {acc, node}
+    defp reverse_segment(node, k, acc) do
+      next = node.next
+      new_node = %ListNode{node | next: acc}
+      reverse_segment(next, k - 1, new_node)
+    end
+  end
+  """
+
+  describe "k-Group: correct version" do
+    # 5W1H | Who: reader. What: recursive count-drop-reverse passes the LeetCode examples plus leftover, k=1, k=len and nil head. When/Where: article Solution 1. How: struct→list asserts. Why: baseline group-reversal correctness.
+    # STAR | Situation: [1..5]/2, /3, /1, [1,2,3]/3, [1,2]/2, [1]/1, [1..5]/4, [1..6]/3, nil. Task: lock outputs. Action: reverse_k_group each. Result: [2,1,4,3,5], [3,2,1,4,5], unchanged, [3,2,1], [2,1], [1], [4,3,2,1,5], [3,2,1,6,5,4], [].
+    # FLOW | ([1,2,3,4,5], k=2): len 5 ≥ 2 → recurse on [3,4,5] first → [4,3,5], then reverse [1,2] onto it → [2,1,4,3,5] (suffix-first, count-k-ahead rule).
+    #          ▼ [2,1,4,3,5]
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive version passes examples and edges" do
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3, 4, 5]), 2) |> to_list() == [2, 1, 4, 3, 5]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3, 4, 5]), 3) |> to_list() == [3, 2, 1, 4, 5]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3, 4, 5]), 1) |> to_list() == [1, 2, 3, 4, 5]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3]), 3) |> to_list() == [3, 2, 1]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2]), 2) |> to_list() == [2, 1]
+      assert KGroupSol1.reverse_k_group(from_list([1]), 1) |> to_list() == [1]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3, 4, 5]), 4) |> to_list() == [4, 3, 2, 1, 5]
+      assert KGroupSol1.reverse_k_group(from_list([1, 2, 3, 4, 5, 6]), 3) |> to_list() == [3, 2, 1, 6, 5, 4]
+      assert KGroupSol1.reverse_k_group(nil, 2) |> to_list() == []
+    end
+  end
+
+  describe "k-Group: mutation syntax (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the iterative dummy version does not compile (`group_prev.next = …` is a remote call on the match left side), so the "O(1) space" solution exists only as pseudocode; any functional fix converges to Solution 1's shape (count, recurse, reverse onto). When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: assignment never mutates struct fields.
+    # STAR | Situation: verbatim dummy source. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote group_prev.next/0 inside match).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim dummy version does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_dummy_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+  end
+end
