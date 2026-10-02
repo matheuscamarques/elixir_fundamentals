@@ -1217,3 +1217,200 @@ defmodule TwoSumProofTest do
     end
   end
 end
+
+# Median article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution` in separate blocks;
+# they are renamed here so all three can coexist in one file.
+defmodule MedianBrute do
+  @spec find_median_sorted_arrays(nums1 :: [integer], nums2 :: [integer]) :: float
+  def find_median_sorted_arrays(nums1, nums2) do
+    merged = Enum.sort(nums1 ++ nums2)
+    len = length(merged)
+
+    if rem(len, 2) == 1 do
+      Enum.at(merged, div(len, 2)) * 1.0
+    else
+      mid1 = Enum.at(merged, div(len, 2) - 1)
+      mid2 = Enum.at(merged, div(len, 2))
+      (mid1 + mid2) / 2
+    end
+  end
+end
+
+defmodule MedianAtomBS do
+  @spec find_median_sorted_arrays(nums1 :: [integer], nums2 :: [integer]) :: float
+  def find_median_sorted_arrays(nums1, nums2) do
+    {a, b} = if length(nums1) <= length(nums2), do: {nums1, nums2}, else: {nums2, nums1}
+    m = length(a)
+    n = length(b)
+    binary_search(a, b, 0, m, div(m + n + 1, 2), m + n)
+  end
+
+  defp binary_search(a, b, low, high, half, total) when low <= high do
+    partition1 = div(low + high, 2)
+    partition2 = half - partition1
+
+    left1 = if partition1 > 0, do: Enum.at(a, partition1 - 1), else: :neg_infinity
+    right1 = if partition1 < length(a), do: Enum.at(a, partition1), else: :infinity
+    left2 = if partition2 > 0, do: Enum.at(b, partition2 - 1), else: :neg_infinity
+    right2 = if partition2 < length(b), do: Enum.at(b, partition2), else: :infinity
+
+    cond do
+      left1 != :neg_infinity and right2 != :infinity and left1 > right2 ->
+        binary_search(a, b, low, partition1 - 1, half, total)
+
+      left2 != :neg_infinity and right1 != :infinity and left2 > right1 ->
+        binary_search(a, b, partition1 + 1, high, half, total)
+
+      true ->
+        max_left = max_value(left1, left2)
+        min_right = min_value(right1, right2)
+
+        if rem(total, 2) == 1 do
+          max_left * 1.0
+        else
+          (max_left + min_right) / 2
+        end
+    end
+  end
+
+  defp binary_search(_a, _b, _low, _high, _half, _total) do
+    raise "No valid partition found"
+  end
+
+  defp max_value(:neg_infinity, other), do: other
+  defp max_value(other, :neg_infinity), do: other
+  defp max_value(a, b), do: max(a, b)
+
+  defp min_value(:infinity, other), do: other
+  defp min_value(other, :infinity), do: other
+  defp min_value(a, b), do: min(a, b)
+end
+
+defmodule MedianFloatBS do
+  @spec find_median_sorted_arrays(nums1 :: [integer], nums2 :: [integer]) :: float
+  def find_median_sorted_arrays(nums1, nums2) do
+    {a, b} = if length(nums1) <= length(nums2), do: {nums1, nums2}, else: {nums2, nums1}
+    m = length(a)
+    n = length(b)
+    total = m + n
+    half = div(total + 1, 2)
+
+    result =
+      Enum.reduce_while(0..m, {0, m}, fn _, {low, high} ->
+        partition1 = div(low + high, 2)
+        partition2 = half - partition1
+
+        left1 = if partition1 > 0, do: Enum.at(a, partition1 - 1), else: -1.0e308
+        right1 = if partition1 < m, do: Enum.at(a, partition1), else: 1.0e308
+        left2 = if partition2 > 0, do: Enum.at(b, partition2 - 1), else: -1.0e308
+        right2 = if partition2 < n, do: Enum.at(b, partition2), else: 1.0e308
+
+        cond do
+          left1 > right2 -> {:cont, {low, partition1 - 1}}
+          left2 > right1 -> {:cont, {partition1 + 1, high}}
+          true -> {:halt, {left1, right1, left2, right2, total}}
+        end
+      end)
+
+    case result do
+      {left1, right1, left2, right2, total} ->
+        max_left = max(left1, left2)
+        min_right = min(right1, right2)
+        if rem(total, 2) == 1, do: max_left * 1.0, else: (max_left + min_right) / 2
+
+      _ ->
+        raise "No valid partition found"
+    end
+  end
+end
+
+defmodule MedianProofTest do
+  # Proof suite for the article "Solving LeetCode's Median of Two Sorted
+  # Arrays in Elixir" (Elixir 1.20.1 / OTP 29). Same 5W1H/STAR convention.
+  use ExUnit.Case, async: true
+
+  describe "Median: LeetCode examples and shape" do
+    # 5W1H | Who: reader. What: brute force passes both LeetCode examples plus one-empty, swapped, negative/zero inputs — always float. When/Where: article Solution 1. How: equality + is_float asserts. Why: baseline correctness.
+    # STAR | Situation: [1,3]/[2], [1,2]/[3,4], [1,2,3]/[], [2]/[1,3], negatives. Task: lock outputs. Action: find_median each. Result: 2.0, 2.5, 2.0, 2.0, -0.5, all floats.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force passes examples and edges" do
+      assert MedianBrute.find_median_sorted_arrays([1, 3], [2]) == 2.0
+      assert MedianBrute.find_median_sorted_arrays([1, 2], [3, 4]) == 2.5
+      assert MedianBrute.find_median_sorted_arrays([1, 2, 3], []) == 2.0
+      assert MedianBrute.find_median_sorted_arrays([2], [1, 3]) == 2.0
+      assert MedianBrute.find_median_sorted_arrays([-5, -3, -1], [0, 2, 4]) == -0.5
+      assert MedianBrute.find_median_sorted_arrays([0, 0], [0, 0]) == 0.0
+
+      assert is_float(MedianBrute.find_median_sorted_arrays([1, 3], [2]))
+      assert is_float(MedianBrute.find_median_sorted_arrays([1, 2], [3, 4]))
+    end
+
+    # 5W1H | Who: reader. What: atom-sentinel binary search matches brute force on every case incl. swapped inputs. When/Where: article Solution 2 (recursion). How: equality asserts incl. is_float. Why: optimal O(log) correctness.
+    # STAR | Situation: same six inputs. Task: lock outputs. Action: find_median each. Result: 2.0, 2.5, 2.0, 2.0, -0.5, 0.0, all floats.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "atom binary search matches brute force" do
+      assert MedianAtomBS.find_median_sorted_arrays([1, 3], [2]) == 2.0
+      assert MedianAtomBS.find_median_sorted_arrays([1, 2], [3, 4]) == 2.5
+      assert MedianAtomBS.find_median_sorted_arrays([1, 2, 3], []) == 2.0
+      assert MedianAtomBS.find_median_sorted_arrays([], [1]) == 1.0
+      assert MedianAtomBS.find_median_sorted_arrays([2], [1, 3]) == 2.0
+      assert MedianAtomBS.find_median_sorted_arrays([-5, -3, -1], [0, 2, 4]) == -0.5
+      assert MedianAtomBS.find_median_sorted_arrays([0, 0], [0, 0]) == 0.0
+
+      assert is_float(MedianAtomBS.find_median_sorted_arrays([1, 3], [2]))
+    end
+
+    # 5W1H | Who: reader. What: float-sentinel reduce_while agrees with atom version on all standard inputs (LeetCode range). When/Where: article reduce_while alternative. How: equality asserts. Why: proves equivalence inside constraints.
+    # STAR | Situation: six standard inputs incl. swapped. Task: lock agreement. Action: find_median each. Result: 2.0, 2.5, 2.0, 1.0, 2.0, -0.5.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "float version agrees on standard inputs" do
+      for {n1, n2} <- [
+            {[1, 3], [2]},
+            {[1, 2], [3, 4]},
+            {[1, 2, 3], []},
+            {[], [1]},
+            {[2], [1, 3]},
+            {[-5, -3, -1], [0, 2, 4]}
+          ] do
+        assert MedianFloatBS.find_median_sorted_arrays(n1, n2) ==
+                 MedianAtomBS.find_median_sorted_arrays(n1, n2)
+      end
+
+      assert MedianFloatBS.find_median_sorted_arrays([1, 3], [2]) == 2.0
+      assert MedianFloatBS.find_median_sorted_arrays([1, 2], [3, 4]) == 2.5
+    end
+  end
+
+  describe "Median: sentinel limits and empty inputs (gaps documented)" do
+    # 5W1H | Who: prover + future AI reader. What: BEHAVIORAL DIFFERENCE — float sentinels assume inputs within ±1e308; beyond that the partition logic corrupts and raises RuntimeError, while atom sentinels stay exact (only float conversion can overflow). When/Where: article never bounds its inputs. How: assert_raise on 10^400. Why: sentinel choice is a hidden precondition.
+    # STAR | Situation: [10^400]/[]. Task: prove divergence. Action: run both versions. Result: float raises RuntimeError("No valid partition found"); atom raises ArithmeticError (honest 1.0e400 overflow).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "sentinels diverge beyond float range" do
+      big = 10 ** 400
+
+      assert_raise RuntimeError, "No valid partition found", fn ->
+        MedianFloatBS.find_median_sorted_arrays([big], [])
+      end
+
+      assert_raise ArithmeticError, fn ->
+        MedianAtomBS.find_median_sorted_arrays([big], [])
+      end
+    end
+
+    # 5W1H | Who: prover. What: both-empty inputs diverge — brute/atom raise ArithmeticError (nil+nil, :neg_infinity+:infinity), float version silently returns 0.0. When/Where: article never covers degenerate input. How: asserts + assert_raise. Why: undefined-median handling differs.
+    # STAR | Situation: ([], []). Task: prove each behavior. Action: run all three. Result: ArithmeticError, ArithmeticError, 0.0.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "both-empty inputs diverge per implementation" do
+      assert_raise ArithmeticError, fn ->
+        MedianBrute.find_median_sorted_arrays([], [])
+      end
+
+      assert_raise ArithmeticError, fn ->
+        MedianAtomBS.find_median_sorted_arrays([], [])
+      end
+
+      assert MedianFloatBS.find_median_sorted_arrays([], []) == 0.0
+    end
+  end
+end
