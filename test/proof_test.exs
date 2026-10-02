@@ -5490,3 +5490,162 @@ defmodule GenProofTest do
     end
   end
 end
+
+# Merge k Sorted Lists article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here.
+# ListNode is shared with the Add Two Numbers section (same struct).
+defmodule MergeKDC do
+  @spec merge_k_lists(lists :: [ListNode.t() | nil]) :: ListNode.t() | nil
+  def merge_k_lists([]), do: nil
+  def merge_k_lists(lists), do: do_merge_k(lists)
+
+  defp do_merge_k([single]), do: single
+
+  defp do_merge_k(lists) do
+    lists
+    |> Enum.chunk_every(2)
+    |> Enum.map(fn
+      [a, b] -> merge_two(a, b)
+      [a] -> a
+    end)
+    |> do_merge_k()
+  end
+
+  defp merge_two(nil, list2), do: list2
+  defp merge_two(list1, nil), do: list1
+
+  defp merge_two(%ListNode{val: v1} = list1, %ListNode{val: v2} = list2) do
+    if v1 <= v2 do
+      %ListNode{list1 | next: merge_two(list1.next, list2)}
+    else
+      %ListNode{list2 | next: merge_two(list1, list2.next)}
+    end
+  end
+end
+
+defmodule MergeKHeapFixed do
+  def merge_k_lists(lists) do
+    heads =
+      lists
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(fn node -> {node.val, node} end)
+
+    merge_heap(Enum.sort(heads))
+  end
+
+  defp merge_heap([]), do: nil
+
+  # NOTE: `node` pinned as %ListNode{} (article leaves it unpinned, which the
+  # type checker flags) — behavior identical, suite stays clean.
+  defp merge_heap([{_val, %ListNode{} = node} | rest]) do
+    new_heap =
+      case node.next do
+        nil -> rest
+        next_node -> Enum.sort([{next_node.val, next_node} | rest])
+      end
+
+    %ListNode{node | next: merge_heap(new_heap)}
+  end
+end
+
+defmodule MergeKSeq do
+  def merge_k_lists(lists) do
+    Enum.reduce(lists, nil, fn list, acc ->
+      merge_two(acc, list)
+    end)
+  end
+
+  defp merge_two(nil, list2), do: list2
+  defp merge_two(list1, nil), do: list1
+
+  defp merge_two(%ListNode{val: v1} = list1, %ListNode{val: v2} = list2) do
+    if v1 <= v2 do
+      %ListNode{list1 | next: merge_two(list1.next, list2)}
+    else
+      %ListNode{list2 | next: merge_two(list1, list2.next)}
+    end
+  end
+end
+
+defmodule MergeKProofTest do
+  # Proof suite for the article "Solving LeetCode's Merge k Sorted Lists in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  # Priority-queue version with `last.next = node` VERBATIM (renamed module
+  # only): struct field mutation does not exist in Elixir. The article itself
+  # flags this flaw — the test pins it.
+  @verbatim_heap_src """
+  defmodule CkVerbatimKHeap do
+    def merge_k_lists(lists) do
+      heads =
+        lists
+        |> Enum.reject(&is_nil/1)
+        |> Enum.map(fn node -> {node.val, node} end)
+      heap = Enum.sort(heads)
+      build_result(heap, nil)
+    end
+    defp build_result([], _last), do: nil
+    defp build_result([{_val, node} | rest], last) do
+      new_heap =
+        case node.next do
+          nil -> rest
+          next_node -> Enum.sort([{next_node.val, next_node} | rest])
+        end
+      if last do
+        last.next = node
+        build_result(new_heap, node)
+      else
+        build_result(new_heap, node)
+      end
+    end
+  end
+  """
+
+  describe "Merge k: correct versions" do
+    # 5W1H | Who: reader. What: divide-and-conquer passes the LeetCode examples plus singletons, empties, negatives and uneven lists. When/Where: article Solution 1. How: struct→list asserts. Why: baseline k-way merge correctness.
+    # STAR | Situation: ex1 (3 lists), [], [[]], singletons, negatives. Task: lock outputs. Action: merge_k_lists each. Result: [1,1,2,3,4,4,5,6], [], [], [1,2,3,4,5], [-3,-2,-1,0].
+    # FLOW | ex1 rounds: [[1,4,5],[1,3,4],[2,6]] → chunk → merge [1,4,5]+[1,3,4]=[1,1,3,4,4,5], [2,6] odd-one-out → merge → [1,1,2,3,4,4,5,6]
+    #          ▼ [1,1,2,3,4,4,5,6]
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "divide and conquer passes examples and edges" do
+      assert MergeKDC.merge_k_lists(Enum.map([[1, 4, 5], [1, 3, 4], [2, 6]], &from_list/1)) |> to_list() == [1, 1, 2, 3, 4, 4, 5, 6]
+      assert MergeKDC.merge_k_lists([]) |> to_list() == []
+      assert MergeKDC.merge_k_lists([nil]) |> to_list() == []
+      assert MergeKDC.merge_k_lists(Enum.map([[5], [1], [3], [2], [4]], &from_list/1)) |> to_list() == [1, 2, 3, 4, 5]
+      assert MergeKDC.merge_k_lists(Enum.map([[-3, 0], [-2, -1]], &from_list/1)) |> to_list() == [-3, -2, -1, 0]
+    end
+
+    # 5W1H | Who: reader. What: fixed heap and sequential versions agree with divide-and-conquer on every case above. When/Where: article heap (corrected) + sequential. How: equality asserts. Why: proves alternative constructions converge.
+    # STAR | Situation: same five inputs. Task: lock agreement. Action: merge_k_lists each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "heap-fixed and sequential agree" do
+      for lists <- [[[1, 4, 5], [1, 3, 4], [2, 6]], [], [[]], [[5], [1], [3], [2], [4]], [[-3, 0], [-2, -1]]] do
+        expected = MergeKDC.merge_k_lists(Enum.map(lists, &from_list/1)) |> to_list()
+        assert MergeKHeapFixed.merge_k_lists(Enum.map(lists, &from_list/1)) |> to_list() == expected
+        assert MergeKSeq.merge_k_lists(Enum.map(lists, &from_list/1)) |> to_list() == expected
+      end
+    end
+  end
+
+  describe "Merge k: mutation flaw (article admits it, documented)" do
+    # 5W1H | Who: prover + future AI reader. What: the threaded-mutation heap version does not compile (`last.next = node` is a remote call on the match left side); the article itself explains why immutability forbids it. When/Where: article Solution 2 first version. How: assert_raise CompileError on verbatim source, stderr captured. Why: assignment never mutates struct fields.
+    # STAR | Situation: verbatim heap-mutation source. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote last.next/0 inside match).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "mutating heap version does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_heap_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+  end
+end
