@@ -1884,3 +1884,315 @@ defmodule PalinProofTest do
     end
   end
 end
+
+# Zigzag Conversion article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so the two
+# real simulations can coexist. Solution 3 is a stub (see test below) and is
+# compiled from a verbatim source string instead of a defmodule, because its
+# unused variables would otherwise pollute the suite with warnings.
+defmodule ZigzagMap do
+  @spec convert(s :: String.t(), num_rows :: integer) :: String.t()
+  def convert(s, num_rows) do
+    if num_rows == 1 or num_rows >= String.length(s) do
+      s
+    else
+      s
+      |> String.graphemes()
+      |> build_rows(num_rows, 0, 1, %{})
+      |> rows_in_order(num_rows)
+      |> Enum.join()
+    end
+  end
+
+  defp build_rows([], _num_rows, _row, _direction, acc), do: acc
+
+  defp build_rows([char | rest], num_rows, row, direction, acc) do
+    acc = Map.update(acc, row, [char], &(&1 ++ [char]))
+    {next_row, next_dir} = next_position(row, direction, num_rows)
+    build_rows(rest, num_rows, next_row, next_dir, acc)
+  end
+
+  defp next_position(row, direction, num_rows) do
+    next = row + direction
+
+    cond do
+      next < 0 -> {1, 1}
+      next >= num_rows -> {num_rows - 2, -1}
+      true -> {next, direction}
+    end
+  end
+
+  defp rows_in_order(map, num_rows) do
+    Enum.map(0..(num_rows - 1), fn i -> Map.get(map, i, []) end)
+  end
+end
+
+defmodule ZigzagList do
+  @spec convert(s :: String.t(), num_rows :: integer) :: String.t()
+  def convert(s, num_rows) do
+    if num_rows == 1 or num_rows >= String.length(s) do
+      s
+    else
+      rows = List.duplicate([], num_rows)
+
+      s
+      |> String.graphemes()
+      |> build_rows_list(num_rows, 0, 1, rows)
+      |> Enum.join()
+    end
+  end
+
+  defp build_rows_list([], _num_rows, _row, _direction, rows), do: rows
+
+  defp build_rows_list([char | rest], num_rows, row, direction, rows) do
+    rows = List.update_at(rows, row, fn r -> r ++ [char] end)
+    {next_row, next_dir} = next_position(row, direction, num_rows)
+    build_rows_list(rest, num_rows, next_row, next_dir, rows)
+  end
+
+  defp next_position(row, direction, num_rows) do
+    next = row + direction
+
+    cond do
+      next < 0 -> {1, 1}
+      next >= num_rows -> {num_rows - 2, -1}
+      true -> {next, direction}
+    end
+  end
+end
+
+defmodule ZigzagProofTest do
+  # Proof suite for the article "Solving LeetCode's Zigzag Conversion in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Solution 3 ("Mathematical Pattern"), VERBATIM (renamed module only).
+  # The unfold step body is literally comments, so every row builds "".
+  @verbatim_math_src """
+  defmodule VerbatimZigzagMath do
+    def convert(s, num_rows) do
+      if num_rows == 1, do: s, else: do_convert(s, num_rows)
+    end
+    defp do_convert(s, num_rows) do
+      chars = String.graphemes(s)
+      n = length(chars)
+      cycle = 2 * num_rows - 2
+      0..(num_rows - 1)
+      |> Enum.map(fn row -> build_row(chars, n, row, cycle) end)
+      |> Enum.join()
+    end
+    defp build_row(chars, n, row, cycle) do
+      Stream.unfold(0, fn step ->
+        # compute positions for this row
+        # ...
+      end)
+      |> Enum.take_while(&(&1 < n))
+      |> Enum.map(&Enum.at(chars, &1))
+      |> Enum.join()
+    end
+  end
+  """
+
+  describe "Zigzag: simulations" do
+    # 5W1H | Who: reader. What: map simulation passes both LeetCode examples plus direction/edge cases (2 rows, rows > length, 1 row, punctuation). When/Where: article Solution 1. How: equality asserts. Why: recommended approach correctness.
+    # STAR | Situation: PAYPALISHIRING/3, /4, A/1, /2, AB/5, HELLO/1, a,b.c/2. Task: lock outputs. Action: convert each. Result: PAHNAPLSIIGYIR, PINALSIGYAHRPI, A, PYAIHRNAPLSIIG, AB, HELLO, abc,..
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "map simulation passes examples and edges" do
+      assert ZigzagMap.convert("PAYPALISHIRING", 3) == "PAHNAPLSIIGYIR"
+      assert ZigzagMap.convert("PAYPALISHIRING", 4) == "PINALSIGYAHRPI"
+      assert ZigzagMap.convert("A", 1) == "A"
+      assert ZigzagMap.convert("PAYPALISHIRING", 2) == "PYAIHRNAPLSIIG"
+      assert ZigzagMap.convert("AB", 5) == "AB"
+      assert ZigzagMap.convert("A", 3) == "A"
+      assert ZigzagMap.convert("HELLO", 1) == "HELLO"
+      assert ZigzagMap.convert("a,b.c", 2) == "abc,."
+    end
+
+    # 5W1H | Who: reader. What: list-of-rows version agrees with the map version on every case above. When/Where: article Solution 2. How: equality asserts against ZigzagMap. Why: proves same traversal, different accumulator.
+    # STAR | Situation: same eight inputs. Task: lock agreement. Action: convert each with both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "list version agrees with map version" do
+      for {s, r} <- [
+            {"PAYPALISHIRING", 3},
+            {"PAYPALISHIRING", 4},
+            {"A", 1},
+            {"PAYPALISHIRING", 2},
+            {"AB", 5},
+            {"A", 3},
+            {"HELLO", 1},
+            {"a,b.c", 2}
+          ] do
+        assert ZigzagList.convert(s, r) == ZigzagMap.convert(s, r)
+      end
+    end
+  end
+
+  describe "Zigzag: stub solution (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — Solution 3 is an unfinished STUB: the unfold step body is only comments, so it halts immediately and every row is ""; both examples return "". When/Where: article "Mathematical Pattern". How: runtime-compile verbatim source (stderr captured for its unused-var warnings), assert "". Why: sketches presented as implementations.
+    # STAR | Situation: verbatim math solution on both LeetCode examples. Task: prove empty results. Action: compile source, convert each. Result: "", "".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "math-pattern stub always returns empty string" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_math_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert apply(mod, :convert, ["PAYPALISHIRING", 3]) == ""
+      assert apply(mod, :convert, ["PAYPALISHIRING", 4]) == ""
+    end
+  end
+end
+
+# Reverse Integer article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all four
+# can coexist in one file.
+defmodule RevStr do
+  @spec reverse(x :: integer) :: integer
+  def reverse(x) do
+    sign = if x < 0, do: -1, else: 1
+    x = abs(x)
+
+    reversed =
+      x
+      |> Integer.to_string()
+      |> String.reverse()
+      |> String.to_integer()
+
+    result = reversed * sign
+
+    if result < -2_147_483_648 or result > 2_147_483_647 do
+      0
+    else
+      result
+    end
+  end
+end
+
+defmodule RevMath do
+  @spec reverse(x :: integer) :: integer
+  def reverse(x) do
+    sign = if x < 0, do: -1, else: 1
+    reversed = do_reverse(abs(x), 0)
+    result = reversed * sign
+
+    if result < -2_147_483_648 or result > 2_147_483_647 do
+      0
+    else
+      result
+    end
+  end
+
+  defp do_reverse(0, acc), do: acc
+
+  defp do_reverse(n, acc) do
+    do_reverse(div(n, 10), acc * 10 + rem(n, 10))
+  end
+end
+
+defmodule RevDigits do
+  @spec reverse(x :: integer) :: integer
+  def reverse(x) do
+    sign = if x < 0, do: -1, else: 1
+
+    reversed =
+      x
+      |> abs()
+      |> Integer.digits()
+      |> Enum.reverse()
+      |> Integer.undigits()
+
+    result = reversed * sign
+
+    if result < -2_147_483_648 or result > 2_147_483_647 do
+      0
+    else
+      result
+    end
+  end
+end
+
+defmodule RevSafe do
+  @max 2_147_483_647
+  @min -2_147_483_648
+
+  @spec reverse(x :: integer) :: integer
+  def reverse(x) do
+    sign = if x < 0, do: -1, else: 1
+    do_reverse(abs(x), 0, sign)
+  end
+
+  defp do_reverse(0, res, sign) do
+    result = res * sign
+    if result < @min or result > @max, do: 0, else: result
+  end
+
+  defp do_reverse(n, res, sign) do
+    digit = rem(n, 10)
+
+    if res > div(@max, 10) or (res == div(@max, 10) and digit > 7) do
+      0
+    else
+      do_reverse(div(n, 10), res * 10 + digit, sign)
+    end
+  end
+end
+
+defmodule ReverseIntProofTest do
+  # Proof suite for the article "Solving LeetCode's Reverse Integer in Elixir"
+  # (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Reverse Integer: examples and boundaries" do
+    # 5W1H | Who: reader. What: all four versions pass the LeetCode examples (sign, trailing zero, overflow-to-zero). When/Where: article examples 1-4. How: equality asserts per version. Why: baseline correctness.
+    # STAR | Situation: 123, -123, 120, 1534236469. Task: lock outputs. Action: reverse each on all four. Result: 321, -321, 21, 0 everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the four examples" do
+      for {x, expected} <- [{123, 321}, {-123, -321}, {120, 21}, {1_534_236_469, 0}] do
+        assert RevStr.reverse(x) == expected
+        assert RevMath.reverse(x) == expected
+        assert RevDigits.reverse(x) == expected
+        assert RevSafe.reverse(x) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: all four agree on zero, trailing zeros, single digits, 32-bit limits, near-limit reversals staying in range. When/Where: article constraints and pitfalls (overflow, negatives, leading zeros). How: equality asserts per version. Why: boundary contract.
+    # STAR | Situation: 0, 10, 100, -120, ±max/min, ±1463847412, 1000000003. Task: lock outputs. Action: reverse each on all four. Result: identical correct values everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on edges and limits" do
+      cases = [
+        {0, 0},
+        {5, 5},
+        {-5, -5},
+        {10, 1},
+        {100, 1},
+        {-120, -21},
+        {2_147_483_647, 0},
+        {-2_147_483_648, 0},
+        {1_463_847_412, 2_147_483_641},
+        {-1_463_847_412, -2_147_483_641},
+        {1_000_000_003, 0}
+      ]
+
+      for {x, expected} <- cases do
+        assert RevStr.reverse(x) == expected
+        assert RevMath.reverse(x) == expected
+        assert RevDigits.reverse(x) == expected
+        assert RevSafe.reverse(x) == expected
+      end
+    end
+  end
+
+  describe "Reverse Integer: pre-check asymmetry (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: SUBTLE — the safe-math `digit > 7` threshold encodes only MAX (…847); a reversal of exactly 2147483648 with negative sign is the valid MIN, but the pre-check returns 0. Unreachable under LeetCode constraints (it needs abs(x) = 8463847412), provable only with out-of-range input since Elixir has big ints. When/Where: article Solution 4. How: assert divergence on x = -8463847412. Why: thresholds copied from editorials carry hidden asymmetry.
+    # STAR | Situation: x = -8463847412 (outside constraints). Task: expose asymmetry. Action: reverse with math vs safe versions. Result: -2147483648 vs 0.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "safe pre-check is exact only within constraints" do
+      assert RevMath.reverse(-8_463_847_412) == -2_147_483_648
+      assert RevSafe.reverse(-8_463_847_412) == 0
+    end
+  end
+end
