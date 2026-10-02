@@ -6234,3 +6234,280 @@ defmodule RemElemProofTest do
     end
   end
 end
+
+# Substring with Concatenation article code, inlined here (this repo never
+# uses /lib). NOTE: the article names versions `Solution`; renamed here.
+# ConcatClean keeps one verbatim wart (`new_count` dead assignment) renamed
+# to _new_count with this NOTE (verbatim emits an unused-variable warning).
+# The sketch version is compiled from a verbatim source string (see below):
+# besides returning [] always, it emits unused-variable warnings.
+defmodule ConcatBrute do
+  @spec find_substring(s :: String.t(), words :: [String.t()]) :: [integer]
+  def find_substring(s, words) do
+    word_len = String.length(hd(words))
+    num_words = length(words)
+    total_len = word_len * num_words
+
+    if String.length(s) < total_len do
+      []
+    else
+      target = Enum.frequencies(words)
+
+      0..(String.length(s) - total_len)
+      |> Enum.filter(fn i ->
+        window = String.slice(s, i, total_len)
+        check_window(window, word_len, target)
+      end)
+    end
+  end
+
+  defp check_window(window, word_len, target) do
+    window
+    |> String.graphemes()
+    |> Enum.chunk_every(word_len)
+    |> Enum.map(&Enum.join/1)
+    |> Enum.frequencies()
+    |> Kernel.==(target)
+  end
+end
+
+defmodule ConcatClean do
+  @spec find_substring(s :: String.t(), words :: [String.t()]) :: [integer]
+  def find_substring(s, words) do
+    word_len = String.length(hd(words))
+    num_words = length(words)
+    total_len = word_len * num_words
+    s_len = String.length(s)
+
+    if s_len < total_len do
+      []
+    else
+      target = Enum.frequencies(words)
+
+      0..(word_len - 1)
+      |> Enum.flat_map(fn offset ->
+        slide(s, offset, word_len, num_words, target, s_len)
+      end)
+      |> Enum.sort()
+    end
+  end
+
+  defp slide(s, offset, word_len, num_words, target, s_len) do
+    do_slide(s, offset, offset, word_len, num_words, target, s_len, %{}, 0, [])
+  end
+
+  defp do_slide(_s, _offset, pos, word_len, _num_words, _target, s_len, _seen, _count, acc)
+       when pos > s_len - word_len do
+    acc
+  end
+
+  defp do_slide(s, offset, pos, word_len, num_words, target, s_len, seen, count, acc) do
+    word = String.slice(s, pos, word_len)
+
+    cond do
+      not Map.has_key?(target, word) ->
+        new_left = pos + word_len
+        do_slide(s, offset, new_left, word_len, num_words, target, s_len, %{}, 0, acc)
+
+      true ->
+        new_seen = Map.update(seen, word, 1, &(&1 + 1))
+        _new_count = count + 1
+
+        {new_left, shrunk_seen, shrunk_count} =
+          shrink(s, offset, new_seen, target, word_len)
+
+        new_acc =
+          if shrunk_count == num_words do
+            [new_left | acc]
+          else
+            acc
+          end
+
+        next_pos = pos + word_len
+        do_slide(s, offset, next_pos, word_len, num_words, target, s_len, shrunk_seen, shrunk_count, new_acc)
+    end
+  end
+
+  defp shrink(s, left, seen, target, word_len) do
+    left_word = String.slice(s, left, word_len)
+
+    if Map.get(seen, left_word, 0) > Map.get(target, left_word, 0) do
+      new_seen = Map.update(seen, left_word, -1, &(&1 - 1))
+      shrink(s, left + word_len, new_seen, target, word_len)
+    else
+      {left, seen, Enum.sum(Map.values(seen))}
+    end
+  end
+end
+
+defmodule ConcatSlideFixed do
+  # FIX by the prover, two lines in essence: (1) shrink from the live window
+  # start `left` (keyed on the just-added word), not the constant `offset`;
+  # (2) carry the shrunk `left` forward instead of overwriting it with
+  # `pos + word_len`. Record when the window holds exactly num_words.
+  def find_substring(s, words) do
+    word_len = String.length(hd(words))
+    num_words = length(words)
+    total_len = word_len * num_words
+    s_len = String.length(s)
+
+    if s_len < total_len do
+      []
+    else
+      target = Enum.frequencies(words)
+
+      0..(word_len - 1)
+      |> Enum.flat_map(fn offset -> slide(s, offset, word_len, num_words, target, s_len) end)
+      |> Enum.sort()
+    end
+  end
+
+  defp slide(s, offset, word_len, num_words, target, s_len) do
+    loop(s, offset, offset, word_len, num_words, target, s_len, %{}, [])
+  end
+
+  defp loop(_s, pos, _left, word_len, _num_words, _target, s_len, _seen, acc)
+       when pos > s_len - word_len do
+    acc
+  end
+
+  defp loop(s, pos, left, word_len, num_words, target, s_len, seen, acc) do
+    word = String.slice(s, pos, word_len)
+
+    cond do
+      not Map.has_key?(target, word) ->
+        loop(s, pos + word_len, pos + word_len, word_len, num_words, target, s_len, %{}, acc)
+
+      true ->
+        new_seen = Map.update(seen, word, 1, &(&1 + 1))
+        {new_left, shrunk_seen} = shrink(s, left, word, new_seen, target, word_len)
+
+        new_acc =
+          if div(pos - new_left, word_len) + 1 == num_words do
+            [new_left | acc]
+          else
+            acc
+          end
+
+        loop(s, pos + word_len, new_left, word_len, num_words, target, s_len, shrunk_seen, new_acc)
+    end
+  end
+
+  defp shrink(s, left, word, seen, target, word_len) do
+    if Map.get(seen, word, 0) > Map.get(target, word, 0) do
+      left_word = String.slice(s, left, word_len)
+      shrink(s, left + word_len, word, Map.update(seen, left_word, -1, &(&1 - 1)), target, word_len)
+    else
+      {left, seen}
+    end
+  end
+end
+
+defmodule ConcatProofTest do
+  # Proof suite for the article "Solving LeetCode's Substring with
+  # Concatenation of All Words in Elixir" (Elixir 1.20.1 / OTP 29).
+  # Same convention.
+  use ExUnit.Case, async: true
+
+  # First sliding-window sketch VERBATIM (renamed module only): find_next_j
+  # is a stub returning nil, so do_slide returns acc ([]) immediately.
+  # Kept as a string: compiling it emits unused-variable warnings.
+  @verbatim_sketch_src """
+  defmodule CkVerbatimConcatSketch do
+    def find_substring(s, words) do
+      word_len = String.length(hd(words))
+      num_words = length(words)
+      total_len = word_len * num_words
+      s_len = String.length(s)
+      if s_len < total_len do
+        []
+      else
+        target = Enum.frequencies(words)
+        0..(word_len - 1)
+        |> Enum.reduce([], fn offset, acc ->
+          acc ++ slide_window(s, offset, word_len, num_words, target, s_len)
+        end)
+        |> Enum.sort()
+      end
+    end
+    defp slide_window(s, offset, word_len, num_words, target, s_len) do
+      do_slide(s, offset, offset, word_len, num_words, target, s_len, %{}, 0, [])
+    end
+    defp do_slide(_s, _offset, _left, _word_len, _num_words, _target, s_len, _seen, _count, acc)
+         when _left > s_len do
+      acc
+    end
+    defp do_slide(s, offset, left, word_len, num_words, target, s_len, seen, count, acc) do
+      j = find_next_j(offset, left, word_len, s_len)
+      if j == nil do
+        acc
+      else
+        acc
+      end
+    end
+    defp find_next_j(offset, left, word_len, s_len) do
+      nil
+    end
+  end
+  """
+
+  describe "Concat: correct versions" do
+    # 5W1H | Who: reader. What: brute force passes the three LeetCode examples. When/Where: article Solution 1. How: equality asserts. Why: baseline window-check correctness.
+    # STAR | Situation: ex1, ex2, ex3. Task: lock outputs. Action: find_substring each. Result: [0,9], [], [6,9,12].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force passes the three examples" do
+      assert ConcatBrute.find_substring("barfoothefoobarman", ["foo", "bar"]) == [0, 9]
+      assert ConcatBrute.find_substring("wordgoodgoodgoodbestword", ["word", "good", "best", "word"]) == []
+      assert ConcatBrute.find_substring("barfoofoobarthefoobarman", ["bar", "foo", "the"]) == [6, 9, 12]
+    end
+
+    # 5W1H | Who: reader. What: FIXED sliding window agrees with brute force on examples plus duplicates, overlaps and miss-heavy inputs. When/Where: prover fix (live-left + current-word shrink). How: equality asserts. Why: proves the two-line fix restores the window.
+    # STAR | Situation: ten inputs incl. "aaa", "foobarfoo", "mississippi". Task: lock agreement. Action: find_substring each on both. Result: identical outputs.
+    # FLOW | ex1 offset 0: pos0 bar, pos3 foo → count 2 == 2 → record 0; pos6 the → reset left=9; pos9 foo, pos12 bar → count 2 → record 9 → [0,9].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed sliding window matches brute force" do
+      for {s, w} <- [
+            {"barfoothefoobarman", ["foo", "bar"]},
+            {"wordgoodgoodgoodbestword", ["word", "good", "best", "word"]},
+            {"barfoofoobarthefoobarman", ["bar", "foo", "the"]},
+            {"aaa", ["a", "a"]},
+            {"foobarfoo", ["foo", "bar", "foo"]},
+            {"foofoobar", ["foo", "bar"]},
+            {"aaaa", ["a", "a"]},
+            {"abc", ["ab", "bc"]},
+            {"abab", ["ab", "ab"]},
+            {"mississippi", ["is", "si"]}
+          ] do
+        assert ConcatSlideFixed.find_substring(s, w) == ConcatBrute.find_substring(s, w)
+      end
+    end
+  end
+
+  describe "Concat: broken sliding versions (article errors documented)" do
+    # 5W1H | Who: prover + future AI reader. What: the first sketch ALWAYS returns []: find_next_j is a stub returning nil, so do_slide hits `j == nil` and returns the empty acc on every offset. When/Where: article Solution 2 sketch (self-admitted "structural issues"). How: runtime-compile verbatim source (stderr captured), assert [] on ex1/ex3. Why: stub presented as implementation step.
+    # STAR | Situation: verbatim sketch on ex1 and ex3. Task: prove empty results. Action: compile source, find_substring each. Result: [], [] (should be [0,9], [6,9,12]).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "sketch version always returns empty" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_sketch_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert apply(mod, :find_substring, ["barfoothefoobarman", ["foo", "bar"]]) == []
+      assert apply(mod, :find_substring, ["barfoofoobarthefoobarman", ["bar", "foo", "the"]]) == []
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the "clean" version is subtly wrong: shrink trims from the constant `offset` (not the live window) and recursion overwrites `left` with `pos + word_len`, so recorded indices go stale (ex1 → [0,0]), misses happen (ex3 loses 9,12) and phantom matches appear (ex2 → [0]). When/Where: article "clean implementation". How: exact-value asserts. Why: pos/left conflation corrupts the window.
+    # STAR | Situation: ex1, ex2, ex3 via verbatim clean version. Task: prove wrong outputs. Action: find_substring each. Result: [0,0], [0], [0,0,6] (should be [0,9], [], [6,9,12]).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "clean version returns phantom indices" do
+      assert ConcatClean.find_substring("barfoothefoobarman", ["foo", "bar"]) == [0, 0]
+      assert ConcatClean.find_substring("wordgoodgoodgoodbestword", ["word", "good", "best", "word"]) == [0]
+      assert ConcatClean.find_substring("barfoofoobarthefoobarman", ["bar", "foo", "the"]) == [0, 0, 6]
+    end
+  end
+end
