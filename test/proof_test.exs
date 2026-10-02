@@ -2196,3 +2196,160 @@ defmodule ReverseIntProofTest do
     end
   end
 end
+
+# String to Integer (atoi) article code, inlined here (this repo never uses
+# /lib). NOTE: the article names every version `Solution`; renamed here so
+# all three can coexist in one file.
+defmodule AtoiRegex do
+  @max 2_147_483_647
+  @min -2_147_483_648
+
+  @spec my_atoi(s :: String.t()) :: integer
+  def my_atoi(s) do
+    case Regex.run(~r/^\s*([+-]?\d+)/, s) do
+      [_, num_str] ->
+        {num, _} = Integer.parse(num_str)
+        clamp(num)
+
+      nil ->
+        0
+    end
+  end
+
+  defp clamp(num) when num > @max, do: @max
+  defp clamp(num) when num < @min, do: @min
+  defp clamp(num), do: num
+end
+
+defmodule AtoiRec do
+  @max 2_147_483_647
+  @min -2_147_483_648
+
+  @spec my_atoi(s :: String.t()) :: integer
+  def my_atoi(s) do
+    chars = String.graphemes(s)
+    {index, sign} = skip_whitespace_and_sign(chars, 0, 1)
+    parse_digits(chars, index, sign, 0)
+  end
+
+  defp skip_whitespace_and_sign(chars, i, sign) do
+    cond do
+      i >= length(chars) -> {i, sign}
+      Enum.at(chars, i) == " " -> skip_whitespace_and_sign(chars, i + 1, sign)
+      Enum.at(chars, i) == "+" -> {i + 1, 1}
+      Enum.at(chars, i) == "-" -> {i + 1, -1}
+      true -> {i, sign}
+    end
+  end
+
+  defp parse_digits(chars, i, sign, acc) do
+    if i < length(chars) and digit?(Enum.at(chars, i)) do
+      digit = String.to_integer(Enum.at(chars, i))
+
+      cond do
+        sign == 1 and (acc > div(@max, 10) or (acc == div(@max, 10) and digit > 7)) ->
+          @max
+
+        sign == -1 and (acc > div(-@min, 10) or (acc == div(-@min, 10) and digit > 8)) ->
+          @min
+
+        true ->
+          parse_digits(chars, i + 1, sign, acc * 10 + digit)
+      end
+    else
+      sign * acc
+    end
+  end
+
+  defp digit?(char) when char >= "0" and char <= "9", do: true
+  defp digit?(_), do: false
+end
+
+defmodule AtoiParse do
+  @max 2_147_483_647
+  @min -2_147_483_648
+
+  @spec my_atoi(s :: String.t()) :: integer
+  def my_atoi(s) do
+    trimmed = String.trim_leading(s, " ")
+
+    case Integer.parse(trimmed) do
+      {num, _rest} -> clamp(num)
+      :error -> 0
+    end
+  end
+
+  defp clamp(num) when num > @max, do: @max
+  defp clamp(num) when num < @min, do: @min
+  defp clamp(num), do: num
+end
+
+defmodule AtoiProofTest do
+  # Proof suite for the article "Solving LeetCode's String to Integer (atoi)
+  # in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "atoi: examples and edges" do
+    # 5W1H | Who: reader. What: all three versions pass the five article examples (spaces, sign, trailing junk, no-digits). When/Where: article examples. How: equality asserts per version. Why: baseline parsing contract.
+    # STAR | Situation: "42", " -042", "1337c0d3", "0-1", "words and 987". Task: lock outputs. Action: my_atoi each on all three. Result: 42, -42, 1337, 0, 0 everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the five examples" do
+      for {s, expected} <- [
+            {"42", 42},
+            {" -042", -42},
+            {"1337c0d3", 1337},
+            {"0-1", 0},
+            {"words and 987", 0}
+          ] do
+        assert AtoiRegex.my_atoi(s) == expected
+        assert AtoiRec.my_atoi(s) == expected
+        assert AtoiParse.my_atoi(s) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: all three agree on empties, lone signs, double signs, zeros, mid-string spaces, dots, exact limits and overflows. When/Where: article pitfalls + constraints. How: equality asserts per version. Why: edge-case contract incl. correct MIN handling (digit > 8) this time.
+    # STAR | Situation: 16 edge inputs. Task: lock outputs. Action: my_atoi each on all three. Result: identical correct values everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on edges and limits" do
+      cases = [
+        {"", 0},
+        {"   ", 0},
+        {"+", 0},
+        {"-", 0},
+        {"+-2", 0},
+        {"0032", 32},
+        {"   +0 123", 0},
+        {".5", 0},
+        {"+ 413", 0},
+        {"2147483647", 2_147_483_647},
+        {"2147483648", 2_147_483_647},
+        {"-2147483648", -2_147_483_648},
+        {"-2147483649", -2_147_483_648},
+        {"9999999999", 2_147_483_647},
+        {"-9999999999", -2_147_483_648},
+        {"00000-42a1234", 0}
+      ]
+
+      for {s, expected} <- cases do
+        assert AtoiRegex.my_atoi(s) == expected
+        assert AtoiRec.my_atoi(s) == expected
+        assert AtoiParse.my_atoi(s) == expected
+      end
+    end
+  end
+
+  describe "atoi: whitespace divergence (article inconsistency documented)" do
+    # 5W1H | Who: prover + future AI reader. What: INTERNAL CONTRADICTION — the regex version skips ALL whitespace (\s: tab, newline), while the article's own pitfall rule says only ' ' counts and Solutions 2/3 enforce exactly that. When/Where: article Solution 1 vs its pitfalls + Solutions 2/3. How: assert divergence on "\t42" and "\n-42". Why: \s vs " " is a real spec fork.
+    # STAR | Situation: leading tab/newline inputs. Task: prove the split. Action: my_atoi on all three. Result: regex 42/-42 vs 0/0 on the other two.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "tab and newline split the implementations" do
+      assert AtoiRegex.my_atoi("\t42") == 42
+      assert AtoiRec.my_atoi("\t42") == 0
+      assert AtoiParse.my_atoi("\t42") == 0
+
+      assert AtoiRegex.my_atoi("\n-42") == -42
+      assert AtoiRec.my_atoi("\n-42") == 0
+      assert AtoiParse.my_atoi("\n-42") == 0
+    end
+  end
+end
