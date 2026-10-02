@@ -4160,3 +4160,303 @@ defmodule PhoneProofTest do
     end
   end
 end
+
+# 4Sum article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all four
+# can coexist in one file.
+defmodule FourBrute do
+  @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
+  def four_sum(nums, target) do
+    n = length(nums)
+    tuple = List.to_tuple(nums)
+
+    0..(n - 4)
+    |> Enum.reduce(MapSet.new(), fn i, acc ->
+      (i + 1)..(n - 3)
+      |> Enum.reduce(acc, fn j, acc2 ->
+        (j + 1)..(n - 2)
+        |> Enum.reduce(acc2, fn k, acc3 ->
+          (k + 1)..(n - 1)
+          |> Enum.reduce(acc3, fn l, acc4 ->
+            if elem(tuple, i) + elem(tuple, j) + elem(tuple, k) + elem(tuple, l) == target do
+              quad =
+                [elem(tuple, i), elem(tuple, j), elem(tuple, k), elem(tuple, l)]
+                |> Enum.sort()
+
+              MapSet.put(acc4, quad)
+            else
+              acc4
+            end
+          end)
+        end)
+      end)
+    end)
+    |> MapSet.to_list()
+  end
+end
+
+defmodule FourHash do
+  # NOTE: `k` below is unused in the article too (renamed to _k here:
+  # verbatim emits an unused-variable warning).
+  @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
+  def four_sum(nums, target) do
+    sorted = Enum.sort(nums)
+    freq = Enum.frequencies(sorted)
+
+    sorted
+    |> Enum.with_index()
+    |> Enum.reduce(MapSet.new(), fn {num1, i}, acc ->
+      freq1 = Map.update!(freq, num1, &(&1 - 1))
+
+      sorted
+      |> Enum.drop(i + 1)
+      |> Enum.with_index(i + 1)
+      |> Enum.reduce(acc, fn {num2, j}, acc2 ->
+        freq2 = Map.update!(freq1, num2, &(&1 - 1))
+
+      sorted
+      |> Enum.drop(j + 1)
+      |> Enum.with_index(j + 1)
+      |> Enum.reduce(acc2, fn {num3, _k}, acc3 ->
+          freq3 = Map.update!(freq2, num3, &(&1 - 1))
+          fourth = target - num1 - num2 - num3
+
+          if Map.get(freq3, fourth, 0) > 0 do
+            MapSet.put(acc3, [num1, num2, num3, fourth])
+          else
+            acc3
+          end
+        end)
+      end)
+    end)
+    |> MapSet.to_list()
+  end
+end
+
+defmodule FourRec do
+  @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
+  def four_sum(nums, target) do
+    nums
+    |> Enum.sort()
+    |> List.to_tuple()
+    |> find_quadruplets(0, target, [])
+    |> Enum.reverse()
+  end
+
+  defp find_quadruplets(nums, i, _target, acc) when i > tuple_size(nums) - 4, do: acc
+
+  defp find_quadruplets(nums, i, target, acc) do
+    x = elem(nums, i)
+
+    if i > 0 and elem(nums, i - 1) == x do
+      find_quadruplets(nums, i + 1, target, acc)
+    else
+      acc = find_second(nums, i, i + 1, target, acc)
+      find_quadruplets(nums, i + 1, target, acc)
+    end
+  end
+
+  # NOTE: `i` is unused in the article's base clause too (renamed to _i: verbatim emits a warning).
+  defp find_second(nums, _i, j, _target, acc) when j > tuple_size(nums) - 3, do: acc
+
+  defp find_second(nums, i, j, target, acc) do
+    y = elem(nums, j)
+
+    if j > i + 1 and elem(nums, j - 1) == y do
+      find_second(nums, i, j + 1, target, acc)
+    else
+      acc = two_pointers(nums, i, j, j + 1, tuple_size(nums) - 1, target, acc)
+      find_second(nums, i, j + 1, target, acc)
+    end
+  end
+
+  defp two_pointers(_nums, _i, _j, left, right, _target, acc) when left >= right, do: acc
+
+  defp two_pointers(nums, i, j, left, right, target, acc) do
+    sum = elem(nums, i) + elem(nums, j) + elem(nums, left) + elem(nums, right)
+
+    cond do
+      sum == target ->
+        quad = [elem(nums, i), elem(nums, j), elem(nums, left), elem(nums, right)]
+        new_acc = [quad | acc]
+        new_left = skip_left(nums, left, right)
+        new_right = skip_right(nums, new_left, right)
+        two_pointers(nums, i, j, new_left, new_right, target, new_acc)
+
+      sum < target ->
+        two_pointers(nums, i, j, left + 1, right, target, acc)
+
+      true ->
+        two_pointers(nums, i, j, left, right - 1, target, acc)
+    end
+  end
+
+  defp skip_left(nums, left, right) do
+    if left + 1 < right and elem(nums, left) == elem(nums, left + 1) do
+      skip_left(nums, left + 1, right)
+    else
+      left + 1
+    end
+  end
+
+  defp skip_right(nums, left, right) do
+    if right - 1 > left and elem(nums, right) == elem(nums, right - 1) do
+      skip_right(nums, left, right - 1)
+    else
+      right - 1
+    end
+  end
+end
+
+defmodule FourRw do
+  @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
+  def four_sum(nums, target) do
+    sorted = Enum.sort(nums)
+    tuple = List.to_tuple(sorted)
+    n = tuple_size(tuple)
+
+    result =
+      Enum.reduce_while(0..(n - 4), [], fn i, acc ->
+        x = elem(tuple, i)
+
+        if i > 0 and elem(tuple, i - 1) == x do
+          {:cont, acc}
+        else
+          {:cont, process_j(tuple, i, i + 1, n, target, acc)}
+        end
+      end)
+
+    Enum.reverse(result)
+  end
+
+  defp process_j(_tuple, _i, j, n, _target, acc) when j > n - 3, do: acc
+
+  defp process_j(tuple, i, j, n, target, acc) do
+    y = elem(tuple, j)
+
+    if j > i + 1 and elem(tuple, j - 1) == y do
+      process_j(tuple, i, j + 1, n, target, acc)
+    else
+      acc = process_two_pointers(tuple, i, j, j + 1, n - 1, target, acc)
+      process_j(tuple, i, j + 1, n, target, acc)
+    end
+  end
+
+  defp process_two_pointers(_tuple, _i, _j, left, right, _target, acc) when left >= right, do: acc
+
+  defp process_two_pointers(tuple, i, j, left, right, target, acc) do
+    sum = elem(tuple, i) + elem(tuple, j) + elem(tuple, left) + elem(tuple, right)
+
+    cond do
+      sum == target ->
+        quad = [elem(tuple, i), elem(tuple, j), elem(tuple, left), elem(tuple, right)]
+        new_left = skip_left(tuple, left, right)
+        new_right = skip_right(tuple, new_left, right)
+        process_two_pointers(tuple, i, j, new_left, new_right, target, [quad | acc])
+
+      sum < target ->
+        process_two_pointers(tuple, i, j, left + 1, right, target, acc)
+
+      true ->
+        process_two_pointers(tuple, i, j, left, right - 1, target, acc)
+    end
+  end
+
+  defp skip_left(tuple, left, right) do
+    if left + 1 < right and elem(tuple, left) == elem(tuple, left + 1) do
+      skip_left(tuple, left + 1, right)
+    else
+      left + 1
+    end
+  end
+
+  defp skip_right(tuple, left, right) do
+    if right - 1 > left and elem(tuple, right) == elem(tuple, right - 1) do
+      skip_right(tuple, left, right - 1)
+    else
+      right - 1
+    end
+  end
+end
+
+defmodule FourSumProofTest do
+  # Proof suite for the article "Solving LeetCode's 4Sum in Elixir"
+  # (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @ex1 {[1, 0, -1, 0, -2, 2], 0, [[-2, -1, 1, 2], [-2, 0, 0, 2], [-1, 0, 0, 1]]}
+  @ex2 {[2, 2, 2, 2, 2], 8, [[2, 2, 2, 2]]}
+
+  describe "4Sum: correct versions" do
+    # 5W1H | Who: reader. What: brute force (as a set), recursive and reduce_while two-pointers (exact order) pass both LeetCode examples. When/Where: article examples 1-2. How: set + exact asserts. Why: baseline correctness with order discipline.
+    # STAR | Situation: ex1 (3 quads) and ex2 (dup collapse). Task: lock outputs. Action: four_sum each on all versions but hash. Result: article outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "examples pass except hash version" do
+      for {nums, target, expected} <- [@ex1, @ex2] do
+        assert FourBrute.four_sum(nums, target) |> MapSet.new() == MapSet.new(expected)
+        assert FourRec.four_sum(nums, target) == expected
+        assert FourRw.four_sum(nums, target) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: recursive and reduce_while agree exactly on dup-heavy, negative-target, multi-quad and no-solution batteries. When/Where: beyond-article robustness. How: equality asserts. Why: proves same solution set and order.
+    # STAR | Situation: five batteries. Task: lock agreement. Action: four_sum each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "two-pointer versions agree on battery" do
+      for {nums, target, expected} <- [
+            {[2, 2, 2, 2, 2, 2], 8, [[2, 2, 2, 2]]},
+            {[-1, -1, 0, 0, 1, 1, 2, 2], 0, [[-1, -1, 0, 2], [-1, -1, 1, 1], [-1, 0, 0, 1]]},
+            {[-5, -4, -3, -2, -1], -14, [[-5, -4, -3, -2]]},
+            {[1, 2, 3, 4], 100, []},
+            {[1, 0, -1, 0, -2, 2], 0, [[-2, -1, 1, 2], [-2, 0, 0, 2], [-1, 0, 0, 1]]}
+          ] do
+        assert FourRec.four_sum(nums, target) == expected
+        assert FourRw.four_sum(nums, target) == expected
+      end
+    end
+  end
+
+  describe "4Sum: hash version pollutes output (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the frequency-map version appends `fourth` UNSORTED, so MapSet dedup fails and the result contains wrong-order duplicates ([-2,-1,2,1], [0,0,1,-1]…): 10 entries instead of 3. When/Where: article Solution 2 (brute force sorts each triplet; this one forgot). How: size + member asserts. Why: normalize-before-dedup is the whole trick.
+    # STAR | Situation: ex1 through the hash version. Task: prove pollution. Action: four_sum, count + check a dupe. Result: 10 entries incl. [-2,-1,2,1].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "hash version returns unsorted duplicates" do
+      {nums, target, _} = @ex1
+      result = FourHash.four_sum(nums, target)
+
+      assert length(result) == 10
+      assert [-2, -1, 2, 1] in result
+      refute MapSet.new(result) == MapSet.new([[-2, -1, 1, 2], [-2, 0, 0, 2], [-1, 0, 0, 1]])
+    end
+  end
+
+  describe "4Sum: short inputs (edge documented)" do
+    # 5W1H | Who: prover. What: inputs shorter than 4 elements are IN the constraints (n >= 1): brute force and reduce_while crash (decreasing ranges + out-of-range elem → ArgumentError, warnings captured), while hash and recursive return [] gracefully. When/Where: article never covers n < 4. How: assert_raise with stderr captured + equality asserts. Why: range/edge contract per implementation.
+    # STAR | Situation: [], [5], [1,2], [1,2,3]. Task: prove each behavior. Action: four_sum each on all four. Result: ArgumentError, ArgumentError, [], [].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "short inputs diverge per implementation" do
+      for {nums, target} <- [{[], 0}, {[5], 5}, {[1, 2], 3}, {[1, 2, 3], 6}] do
+        for mod <- [FourBrute, FourRw] do
+          err =
+            ExUnit.CaptureIO.capture_io(:stderr, fn ->
+              send(self(), {:err, try do
+                apply(mod, :four_sum, [nums, target])
+              rescue
+                e -> e
+              end})
+            end)
+            |> then(fn _ ->
+              receive do
+                {:err, e} -> e
+              end
+            end)
+
+          assert %ArgumentError{} = err
+        end
+
+        assert FourHash.four_sum(nums, target) == []
+        assert FourRec.four_sum(nums, target) == []
+      end
+    end
+  end
+end
