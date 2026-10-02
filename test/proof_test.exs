@@ -4633,3 +4633,106 @@ defmodule RemNthProofTest do
     end
   end
 end
+
+# Working one-pass versions for the article's Solutions 2 and 3.
+# Same idea as RemFixedOnePass (n-gap, then immutable rebuild), but each
+# mirrors its article's structure: advance/move_together + head branch
+# (Solution 2), dummy + advance n+1 (Solution 3). The rebuild keeps `slow`
+# and skips only the target — the first draft of RemOnePass returned
+# nxt.next (dropping slow too) and the suite caught it.
+defmodule RemOnePass do
+  @spec remove_nth_from_end(head :: ListNode.t() | nil, n :: integer) :: ListNode.t() | nil
+  def remove_nth_from_end(head, n) do
+    case advance(head, n) do
+      nil -> head.next
+      fast -> rebuild_skipping(head, move_together(head, fast))
+    end
+  end
+
+  defp advance(node, 0), do: node
+  defp advance(nil, _n), do: nil
+  defp advance(%ListNode{next: next}, n), do: advance(next, n - 1)
+
+  defp move_together(slow, %ListNode{next: nil}), do: slow
+  defp move_together(slow, %ListNode{next: fast_next}), do: move_together(slow.next, fast_next)
+
+  # slow is a proper suffix of the chain, so the first === hit walking from
+  # head is slow itself (every earlier node is strictly longer).
+  defp rebuild_skipping(%ListNode{val: v, next: nxt} = node, slow) when node === slow do
+    %ListNode{val: v, next: nxt.next}
+  end
+
+  defp rebuild_skipping(%ListNode{val: v, next: nxt}, slow) do
+    %ListNode{val: v, next: rebuild_skipping(nxt, slow)}
+  end
+end
+
+defmodule RemDummy do
+  @spec remove_nth_from_end(head :: ListNode.t() | nil, n :: integer) :: ListNode.t() | nil
+  def remove_nth_from_end(head, n) do
+    dummy = %ListNode{val: 0, next: head}
+
+    dummy
+    |> advance(n + 1)
+    |> then(&remove_with_gap(dummy, &1))
+    |> Map.get(:next)
+  end
+
+  defp advance(node, 0), do: node
+  defp advance(nil, _n), do: nil
+  defp advance(%ListNode{next: next}, n), do: advance(next, n - 1)
+
+  defp remove_with_gap(%ListNode{val: v, next: nxt}, nil) do
+    %ListNode{val: v, next: nxt.next}
+  end
+
+  defp remove_with_gap(%ListNode{val: v, next: nxt}, %ListNode{next: fast_next}) do
+    %ListNode{val: v, next: remove_with_gap(nxt, fast_next)}
+  end
+end
+
+defmodule RemWorkingProofTest do
+  # Proof suite for the working one-pass versions (prover-written fixes for
+  # article Solutions 2 and 3). Same convention. ListNode is shared with
+  # the Add Two Numbers section (same struct).
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Remove Nth: working one-pass versions" do
+    # 5W1H | Who: reader. What: both working one-pass versions (plain gap + dummy gap) match two-pass everywhere: examples, head/last/middle, all-equal values, 1..10. When/Where: prover fixes for article Solutions 2-3. How: equality asserts against RemTwoPass. Why: proves the one-pass IDEA is sound, only the mutation syntax wasn't.
+    # STAR | Situation: seven inputs. Task: lock three-way agreement. Action: remove_nth_from_end each on all three. Result: identical outputs.
+    # FLOW | ([1,2,3,4,5], 2): fast advances 2 → move together until fast.next nil → slow lands before 4 → rebuild keeps slow, skips target → [1,2,3,5]. Dummy version: same walk from dummy (advance 3), rebuild, return dummy.next.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "both one-pass versions match two-pass" do
+      for {l, n} <- [
+            {[1, 2, 3, 4, 5], 2},
+            {[1], 1},
+            {[1, 2], 1},
+            {[1, 2, 3], 3},
+            {[1, 2, 3], 1},
+            {[1, 1, 1], 2},
+            {Enum.to_list(1..10), 7}
+          ] do
+        expected = RemTwoPass.remove_nth_from_end(from_list(l), n) |> to_list()
+        assert RemOnePass.remove_nth_from_end(from_list(l), n) |> to_list() == expected
+        assert RemDummy.remove_nth_from_end(from_list(l), n) |> to_list() == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: 10k-node list completes on both new versions (practical robustness at scale). When/Where: beyond-article scale check. How: length + membership asserts. Why: recursion depth behaves at realistic sizes.
+    # STAR | Situation: 1..10000, remove 5000th from end (=5001). Task: prove completion. Action: remove_nth_from_end both. Result: 9999 nodes, 5001 gone.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "long list completes on both new versions" do
+      for mod <- [RemOnePass, RemDummy] do
+        result = apply(mod, :remove_nth_from_end, [from_list(Enum.to_list(1..10_000)), 5000]) |> to_list()
+        assert length(result) == 9999
+        refute 5001 in result
+      end
+    end
+  end
+end
