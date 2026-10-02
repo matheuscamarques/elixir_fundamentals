@@ -2790,3 +2790,160 @@ defmodule RegexProofTest do
     end
   end
 end
+
+# Container With Most Water article code, inlined here (this repo never uses
+# /lib). NOTE: the article names every version `Solution`; renamed here.
+# WaterRwFixed differs from the article by ONE pattern (`{_, _, max_area}`
+# instead of `{_, max_area}`) — see the crash test below.
+defmodule WaterBrute do
+  @spec max_area(height :: [integer]) :: integer
+  def max_area(height) do
+    n = length(height)
+    heights = List.to_tuple(height)
+
+    0..(n - 2)
+    |> Enum.reduce(0, fn i, best ->
+      (i + 1)..(n - 1)
+      |> Enum.reduce(best, fn j, acc ->
+        h = min(elem(heights, i), elem(heights, j))
+        max(acc, h * (j - i))
+      end)
+    end)
+  end
+end
+
+defmodule WaterRec do
+  @spec max_area(height :: [integer]) :: integer
+  def max_area(height) do
+    height |> List.to_tuple() |> solve(0, length(height) - 1, 0)
+  end
+
+  defp solve(_height, l, r, ans) when l >= r, do: ans
+
+  defp solve(height, l, r, ans) do
+    lh = elem(height, l)
+    rh = elem(height, r)
+    new_ans = max(min(lh, rh) * (r - l), ans)
+
+    if lh < rh do
+      solve(height, l + 1, r, new_ans)
+    else
+      solve(height, l, r - 1, new_ans)
+    end
+  end
+end
+
+defmodule WaterRwVerbatim do
+  @spec max_area(height :: [integer]) :: integer
+  def max_area(height) do
+    n = length(height)
+    heights = List.to_tuple(height)
+
+    {_, max_area} =
+      Enum.reduce_while(0..n, {0, n - 1, 0}, fn _, {left, right, best} ->
+        if left >= right do
+          {:halt, {left, right, best}}
+        else
+          lh = elem(heights, left)
+          rh = elem(heights, right)
+          new_best = max(best, min(lh, rh) * (right - left))
+
+          if lh < rh do
+            {:cont, {left + 1, right, new_best}}
+          else
+            {:cont, {left, right - 1, new_best}}
+          end
+        end
+      end)
+
+    max_area
+  end
+end
+
+defmodule WaterRwFixed do
+  @spec max_area(height :: [integer]) :: integer
+  def max_area(height) do
+    n = length(height)
+    heights = List.to_tuple(height)
+
+    {_, _, max_area} =
+      Enum.reduce_while(0..n, {0, n - 1, 0}, fn _, {left, right, best} ->
+        if left >= right do
+          {:halt, {left, right, best}}
+        else
+          lh = elem(heights, left)
+          rh = elem(heights, right)
+          new_best = max(best, min(lh, rh) * (right - left))
+
+          if lh < rh do
+            {:cont, {left + 1, right, new_best}}
+          else
+            {:cont, {left, right - 1, new_best}}
+          end
+        end
+      end)
+
+    max_area
+  end
+end
+
+defmodule WaterProofTest do
+  # Proof suite for the article "Solving LeetCode's Container With Most Water
+  # in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @cases [
+    {[1, 8, 6, 2, 5, 4, 8, 3, 7], 49},
+    {[1, 1], 1},
+    {[4, 3, 2, 1, 4], 16},
+    {[0, 0], 0},
+    {[5, 5, 5, 5], 15},
+    {[1, 2, 3, 4, 5], 6},
+    {[5, 4, 3, 2, 1], 6},
+    {[1, 0, 0, 0, 1], 4},
+    {[2, 3, 10, 5, 7, 8, 9], 36},
+    {[0, 1, 0], 0}
+  ]
+
+  describe "Water: correct versions" do
+    # 5W1H | Who: reader. What: brute force passes the three LeetCode examples plus zeros, ties, monotonic and gapped inputs. When/Where: article Solution 1. How: equality asserts. Why: baseline correctness (tuple access is genuinely O(1) here).
+    # STAR | Situation: ten height arrays. Task: lock outputs. Action: max_area each. Result: 49, 1, 16, 0, 15, 6, 6, 4, 36, 0.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force passes examples and edges" do
+      for {h, expected} <- @cases do
+        assert WaterBrute.max_area(h) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: recursive two-pointer matches brute force on every case. When/Where: article Solution 2 (recursion). How: equality asserts. Why: optimal O(n) correctness.
+    # STAR | Situation: same ten arrays. Task: lock agreement. Action: max_area each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive two-pointer matches brute force" do
+      for {h, expected} <- @cases do
+        assert WaterRec.max_area(h) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: reduce_while with the ONE-PATTERN fix ({_, _, max_area}) matches brute force everywhere. When/Where: article Solution 2 alternative, corrected. How: equality asserts. Why: proves only the destructure was broken.
+    # STAR | Situation: same ten arrays. Task: lock agreement. Action: max_area each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed reduce_while matches brute force" do
+      for {h, expected} <- @cases do
+        assert WaterRwFixed.max_area(h) == expected
+      end
+    end
+  end
+
+  describe "Water: broken destructure (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim reduce_while destructures `{_, max_area}` but the accumulator is always the 3-tuple {left, right, best}, so EVERY input raises MatchError. When/Where: article Solution 2 alternative. How: assert_raise on three inputs. Why: acc shape must match the pattern.
+    # STAR | Situation: verbatim version on [1,1], the big example, [4,3,2,1,4]. Task: prove the crash. Action: max_area each. Result: MatchError thrice.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim reduce_while raises MatchError on any input" do
+      for h <- [[1, 1], [1, 8, 6, 2, 5, 4, 8, 3, 7], [4, 3, 2, 1, 4]] do
+        assert_raise MatchError, fn ->
+          WaterRwVerbatim.max_area(h)
+        end
+      end
+    end
+  end
+end
