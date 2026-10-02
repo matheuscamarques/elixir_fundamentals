@@ -6169,3 +6169,68 @@ defmodule DedupProofTest do
     end
   end
 end
+
+# Remove Element article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here so all three can
+# coexist in one file.
+defmodule RemElemReject do
+  @spec remove_element(nums :: [integer], val :: integer) :: integer
+  def remove_element(nums, val) do
+    nums
+    |> Enum.reject(&(&1 == val))
+    |> length()
+  end
+end
+
+defmodule RemElemRec do
+  @spec remove_element(nums :: [integer], val :: integer) :: integer
+  def remove_element(nums, val) do
+    nums
+    |> filter_valid(val, [])
+    |> length()
+  end
+
+  defp filter_valid([], _val, acc), do: Enum.reverse(acc)
+  defp filter_valid([head | tail], val, acc) when head != val, do: filter_valid(tail, val, [head | acc])
+  defp filter_valid([_head | tail], val, acc), do: filter_valid(tail, val, acc)
+end
+
+defmodule RemElemCount do
+  @spec remove_element(nums :: [integer], val :: integer) :: integer
+  def remove_element(nums, val) do
+    count_valid(nums, val, 0)
+  end
+
+  defp count_valid([], _val, count), do: count
+  defp count_valid([head | tail], val, count) when head != val, do: count_valid(tail, val, count + 1)
+  defp count_valid([_head | tail], val, count), do: count_valid(tail, val, count)
+end
+
+defmodule RemElemProofTest do
+  # Proof suite for the article "Solving LeetCode's Remove Element in Elixir"
+  # (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Remove Element: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus empty, all-removed, none-removed and singleton edges. When/Where: article examples + constraints (length may be 0). How: equality asserts per version. Why: baseline filter-and-count contract.
+    # STAR | Situation: eight (nums, val) inputs. Task: lock counts. Action: remove_element each on all three. Result: 2, 5, 0, 0, 3, 0, 1, 0 everywhere.
+    # FLOW | ([0,1,2,2,3,0,4,2], 2): keep 0,1, skip 2,2, keep 3,0,4, skip 2 → 5 kept (order preserved by the final reverse).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on examples and edges" do
+      for {nums, val, expected} <- [
+            {[3, 2, 2, 3], 3, 2},
+            {[0, 1, 2, 2, 3, 0, 4, 2], 2, 5},
+            {[], 1, 0},
+            {[2, 2, 2], 2, 0},
+            {[1, 2, 3], 9, 3},
+            {[5], 5, 0},
+            {[5], 4, 1},
+            {[0, 0, 0], 0, 0}
+          ] do
+        assert RemElemReject.remove_element(nums, val) == expected
+        assert RemElemRec.remove_element(nums, val) == expected
+        assert RemElemCount.remove_element(nums, val) == expected
+      end
+    end
+  end
+end
