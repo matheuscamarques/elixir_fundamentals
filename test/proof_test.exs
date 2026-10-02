@@ -3171,3 +3171,114 @@ defmodule RomToIntProofTest do
     end
   end
 end
+
+# Longest Common Prefix article code, inlined here (this repo never uses
+# /lib). NOTE: the article names every version `Solution`; renamed here so
+# all three can coexist in one file.
+defmodule LcpHoriz do
+  @spec longest_common_prefix(strs :: [String.t()]) :: String.t()
+  def longest_common_prefix([]), do: ""
+
+  def longest_common_prefix([first | rest]) do
+    Enum.reduce_while(rest, first, fn str, prefix ->
+      new_prefix = shrink_prefix(prefix, str)
+      if new_prefix == "", do: {:halt, ""}, else: {:cont, new_prefix}
+    end)
+  end
+
+  defp shrink_prefix(prefix, str) do
+    if String.starts_with?(str, prefix) do
+      prefix
+    else
+      shrink_prefix(String.slice(prefix, 0..-2//1), str)
+    end
+  end
+end
+
+defmodule LcpVert do
+  @spec longest_common_prefix(strs :: [String.t()]) :: String.t()
+  def longest_common_prefix([]), do: ""
+
+  def longest_common_prefix(strs) do
+    first = hd(strs)
+    rest = tl(strs)
+    chars = String.graphemes(first)
+    n = length(chars)
+
+    Enum.reduce_while(0..(n - 1), first, fn i, _acc ->
+      char = Enum.at(chars, i)
+
+      if Enum.all?(rest, fn s -> String.at(s, i) == char end) do
+        {:cont, first}
+      else
+        {:halt, String.slice(first, 0, i)}
+      end
+    end)
+  end
+end
+
+defmodule LcpSort do
+  @spec longest_common_prefix(strs :: [String.t()]) :: String.t()
+  def longest_common_prefix([]), do: ""
+
+  def longest_common_prefix(strs) do
+    sorted = Enum.sort(strs)
+    first = hd(sorted)
+    last = List.last(sorted)
+
+    Enum.zip(String.graphemes(first), String.graphemes(last))
+    |> Enum.take_while(fn {a, b} -> a == b end)
+    |> Enum.map(fn {a, _} -> a end)
+    |> Enum.join()
+  end
+end
+
+defmodule LcpProofTest do
+  # Proof suite for the article "Solving LeetCode's Longest Common Prefix in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @cases [
+    {["flower", "flow", "flight"], "fl"},
+    {["dog", "racecar", "car"], ""},
+    {["abc", ""], ""},
+    {["a"], "a"},
+    {["abc"], "abc"},
+    {["abab", "aba", "abc"], "ab"},
+    {["prefix", "pre", "prepare"], "pre"},
+    {["interspecies", "interstellar", "interstate"], "inters"},
+    {["abc", "abc", "abc"], "abc"},
+    {[], ""}
+  ]
+
+  describe "LCP: correct versions" do
+    # 5W1H | Who: reader. What: all three scans pass the LeetCode examples plus singletons, trailing empties, full-overlap and no-overlap batteries. When/Where: article examples + edges. How: equality asserts per version. Why: baseline scanning contract.
+    # STAR | Situation: ten inputs. Task: lock outputs. Action: longest_common_prefix each on all three. Result: identical correct values everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and battery" do
+      for {strs, expected} <- @cases do
+        assert LcpHoriz.longest_common_prefix(strs) == expected
+        assert LcpVert.longest_common_prefix(strs) == expected
+        assert LcpSort.longest_common_prefix(strs) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: empty FIRST string is correct ("") on all three; vertical scanning builds 0..-1 (decreasing range, warns in plain scripts — silent under ExUnit's logger) before halting at column 0. When/Where: article never covers empty-first input. How: direct asserts for horiz/sort; stderr-captured asserts for vertical. Why: range edge + suite-output hygiene.
+    # STAR | Situation: [""], ["", "abc"]. Task: prove "" everywhere. Action: run all three (vertical captured). Result: "" always.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "empty first string returns empty" do
+      for strs <- [[""], ["", "abc"]] do
+        assert LcpHoriz.longest_common_prefix(strs) == ""
+        assert LcpSort.longest_common_prefix(strs) == ""
+
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          send(self(), {:res, LcpVert.longest_common_prefix(strs)})
+        end)
+
+        receive do
+          {:res, result} -> assert result == ""
+        end
+      end
+    end
+  end
+end
