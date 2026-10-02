@@ -6511,3 +6511,178 @@ defmodule ConcatProofTest do
     end
   end
 end
+
+# Next Permutation article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here so all three can
+# coexist in one file.
+defmodule NextBrute do
+  @spec next_permutation(nums :: [integer]) :: [integer]
+  def next_permutation(nums) do
+    perms =
+      nums
+      |> permutations()
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    case Enum.find_index(perms, &(&1 == nums)) do
+      nil -> nums
+      idx -> Enum.at(perms, rem(idx + 1, length(perms)))
+    end
+  end
+
+  defp permutations([]), do: [[]]
+
+  defp permutations(list) do
+    for h <- list,
+        t <- permutations(list -- [h]) do
+      [h | t]
+    end
+  end
+end
+
+defmodule NextTuple do
+  @spec next_permutation(nums :: [integer]) :: [integer]
+  def next_permutation(nums) do
+    tuple = List.to_tuple(nums)
+    n = tuple_size(tuple)
+    i = find_pivot(tuple, n - 2)
+
+    if i == -1 do
+      tuple
+      |> Tuple.to_list()
+      |> Enum.reverse()
+    else
+      j = find_successor(tuple, n - 1, elem(tuple, i))
+      swapped = swap(tuple, i, j)
+      Tuple.to_list(reverse_suffix(swapped, i + 1, n - 1))
+    end
+  end
+
+  defp find_pivot(_tuple, i) when i < 0, do: -1
+
+  defp find_pivot(tuple, i) do
+    if elem(tuple, i) < elem(tuple, i + 1) do
+      i
+    else
+      find_pivot(tuple, i - 1)
+    end
+  end
+
+  defp find_successor(tuple, j, pivot_value) do
+    if elem(tuple, j) > pivot_value do
+      j
+    else
+      find_successor(tuple, j - 1, pivot_value)
+    end
+  end
+
+  defp swap(tuple, i, j) do
+    vi = elem(tuple, i)
+    vj = elem(tuple, j)
+    tuple |> put_elem(i, vj) |> put_elem(j, vi)
+  end
+
+  defp reverse_suffix(tuple, left, right) when left >= right, do: tuple
+
+  defp reverse_suffix(tuple, left, right) do
+    vi = elem(tuple, left)
+    vj = elem(tuple, right)
+    tuple |> put_elem(left, vj) |> put_elem(right, vi) |> reverse_suffix(left + 1, right - 1)
+  end
+end
+
+defmodule NextList do
+  @spec next_permutation(nums :: [integer]) :: [integer]
+  def next_permutation(nums) do
+    i = find_pivot(nums, length(nums) - 2)
+
+    if i == nil do
+      Enum.reverse(nums)
+    else
+      j = find_successor(nums, length(nums) - 1, Enum.at(nums, i))
+
+      nums
+      |> swap_at(i, j)
+      |> reverse_suffix(i + 1)
+    end
+  end
+
+  defp find_pivot(_nums, i) when i < 0, do: nil
+
+  defp find_pivot(nums, i) do
+    if Enum.at(nums, i) < Enum.at(nums, i + 1) do
+      i
+    else
+      find_pivot(nums, i - 1)
+    end
+  end
+
+  defp find_successor(nums, j, pivot_value) do
+    if Enum.at(nums, j) > pivot_value do
+      j
+    else
+      find_successor(nums, j - 1, pivot_value)
+    end
+  end
+
+  defp swap_at(list, i, j) do
+    vi = Enum.at(list, i)
+    vj = Enum.at(list, j)
+
+    list
+    |> List.replace_at(i, vj)
+    |> List.replace_at(j, vi)
+  end
+
+  defp reverse_suffix(list, start) do
+    {prefix, suffix} = Enum.split(list, start)
+    prefix ++ Enum.reverse(suffix)
+  end
+end
+
+defmodule NextPermProofTest do
+  # Proof suite for the article "Solving LeetCode's Next Permutation in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  defp all_perms([]), do: [[]]
+  defp all_perms(list) do
+    for h <- list, t <- all_perms(list -- [h]), do: [h | t]
+  end
+
+  describe "Next Permutation: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus singletons, all-equal, descending and empty inputs. When/Where: article examples 1-3 + edges. How: equality asserts per version. Why: baseline pivot-swap-reverse correctness.
+    # STAR | Situation: ten inputs. Task: lock outputs. Action: next_permutation each on all three. Result: identical correct outputs everywhere.
+    # FLOW | ([1,2,3]): pivot i=1 (2<3), successor j=2 (3>2), swap → [1,3,2], suffix from 2 trivially reversed.
+    #          ▼ [1,3,2]
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and edges" do
+      for {input, expected} <- [
+            {[1, 2, 3], [1, 3, 2]},
+            {[3, 2, 1], [1, 2, 3]},
+            {[1, 1, 5], [1, 5, 1]},
+            {[1], [1]},
+            {[2, 2, 2], [2, 2, 2]},
+            {[1, 3, 2], [2, 1, 3]},
+            {[2, 3, 1], [3, 1, 2]},
+            {[3, 1, 2], [3, 2, 1]},
+            {[], []},
+            {[5, 4, 3, 2, 1], [1, 2, 3, 4, 5]}
+          ] do
+        assert NextBrute.next_permutation(input) == expected
+        assert NextTuple.next_permutation(input) == expected
+        assert NextList.next_permutation(input) == expected
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: EXHAUSTIVE — all three agree on every permutation of [1,2,3,4] (24 inputs), so no input in that space distinguishes them. When/Where: beyond-article sweep. How: full-domain agreement assert. Why: strongest equivalence for a bounded domain.
+    # STAR | Situation: all 24 perms. Task: prove agreement. Action: next_permutation each on all three. Result: identical outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on every permutation of four elements" do
+      for p <- all_perms([1, 2, 3, 4]) |> Enum.uniq() do
+        assert NextTuple.next_permutation(p) == NextBrute.next_permutation(p)
+        assert NextList.next_permutation(p) == NextBrute.next_permutation(p)
+      end
+    end
+  end
+end
