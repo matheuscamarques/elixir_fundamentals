@@ -3387,6 +3387,7 @@ defmodule RomanProofTest do
     # 5W1H | Who: prover + future AI reader. What: EXHAUSTIVE — both versions agree on the ENTIRE valid domain 1..3999 (zero mismatches), so no input in range can distinguish them. When/Where: article constraints. How: full-sweep assert. Why: strongest possible equivalence proof for a bounded domain.
     # STAR | Situation: every n in 1..3999. Task: prove agreement. Action: compare both versions. Result: 0 mismatches.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # PROPERTY | forall n in 1..3999: greedy(n) == table(n) — exhaustive sweep, zero mismatches.
     test "both versions agree on the whole domain" do
       mismatches = Enum.reject(1..3999, fn n -> RomanGreedy.int_to_roman(n) == RomanTable.int_to_roman(n) end)
 
@@ -3538,6 +3539,7 @@ defmodule RomToIntProofTest do
     # 5W1H | Who: prover + future AI reader. What: CROSS-ARTICLE — every int_to_roman output from the previous article round-trips through all three parsers over the ENTIRE domain 1..3999 (zero failures), proving both directions at once. When/Where: Integer-to-Roman generator (already proven) as oracle. How: full-sweep asserts. Why: strongest equivalence across two articles.
     # STAR | Situation: every n in 1..3999. Task: prove round-trip. Action: parse int_to_roman(n) with all three. Result: n every time, 0 failures.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # PROPERTY | forall n in 1..3999: parse(int_to_roman(n)) == n for all three parsers — exhaustive round-trip.
     test "full domain round-trips through all parsers" do
       failures =
         Enum.reject(1..3999, fn n ->

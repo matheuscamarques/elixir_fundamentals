@@ -74,11 +74,21 @@ then read the corresponding test comment. Do not guess — reproduce.
 ```text
 test/proof_test.exs           # full proofs: 5W1H + STAR + FLOW, warning-clean
 test/corrections_test.exs     # frozen mistake-rows split for tuning
+properties/audit_test.exs     # audit properties (NOT corpus): mix test properties/
 scripts/derive.exs            # .exs → dataset/*.jsonl (mix run scripts/derive.exs)
 scripts/lint.exs              # schema linter (mix run scripts/lint.exs)
 dataset/*.jsonl               # derived tuning rows: explain/detect/fix/generate
 lib/elixir_fundamentals.ex    # unused placeholder (repo keeps code in test files)
 ```
+
+## Audit properties (outside the corpus)
+
+`properties/audit_test.exs` checks invariants the articles never state
+(tokenizer idempotence, posting order, AND⊆OR, tf-monotonicity,
+self-membership, zigzag identity) over seeded random inputs — deterministic,
+no dependencies. A failure here never enters the corpus directly: its
+minimal case enters `test/proof_test.exs` as a pinned 5W1H/STAR example.
+Properties discover; examples teach.
 
 ## Derived artifacts (never edit by hand)
 
