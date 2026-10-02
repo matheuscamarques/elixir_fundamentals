@@ -912,11 +912,27 @@ end
 # TFIDF (article Step 5, verbatim).
 defmodule TFIDF do
   def idf(index, total_docs, term) do
+    # FLOW | idf(index, 3, "elixir")
+    #          │ Map.get(index, "elixir", []) |> length()
+    #          ▼ df = 2
+    #          │ :math.log(3 / 2)
+    #          ▼ 0.4054651081081644
+    #
+    #        idf(index, 3, "beam") → df = 1 → :math.log(3 / 1) → 1.0986122886681098
+    #        idf(index, 3, "zzz")  → df = 0 → 0.0                    ← guard, not log(3/0)
     df = index |> Map.get(term, []) |> length()
     if df == 0, do: 0.0, else: :math.log(total_docs / df)
   end
 
   def score(index, total_docs, term, doc_id) do
+    # FLOW | score(index, 3, "elixir", "doc1")
+    #          │ Enum.find([{"doc1",1},{"doc2",1}], id == "doc1")
+    #          ▼ {"doc1", 1}
+    #          │ tf * idf(index, 3, "elixir")
+    #          ▼ 1 * 0.4054651081081644 = 0.4054651081081644
+    #
+    #        score(index, 3, "elixir", "doc3") → find → nil → 0.0     ← doc lacks the term
+    #        score(index, 3, "zzz",    "doc1") → Map.get → [] → nil → 0.0
     case Enum.find(Map.get(index, term, []), fn {id, _} -> id == doc_id end) do
       nil -> 0.0
       {_id, tf} -> tf * idf(index, total_docs, term)
@@ -1198,6 +1214,14 @@ defmodule TwoSumProofTest do
     # 5W1H | Who: reader. What: brute force passes all three LeetCode examples in [earlier, later] order. When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
     # STAR | Situation: [2,7,11,15]/9, [3,2,4]/6, [3,3]/6. Task: lock outputs. Action: two_sum each. Result: [0,1], [1,2], [0,1].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | two_sum([2,7,11,15], 9)   (TwoSumBrute)
+    #        i=0: j=1 → 2+7=9  ✓
+    #        ▼ [0,1]  ← outer Enum.find_value returns the first non-nil
+    #
+    # FLOW | two_sum([3,2,4], 6)   (TwoSumBrute)
+    #        i=0: j=1 → 5 ✗ ; j=2 → 7 ✗ → nil
+    #        i=1: j=2 → 6 ✓
+    #        ▼ [1,2]
     test "brute force passes the three examples" do
       assert TwoSumBrute.two_sum([2, 7, 11, 15], 9) == [0, 1]
       assert TwoSumBrute.two_sum([3, 2, 4], 6) == [1, 2]
@@ -1254,6 +1278,17 @@ defmodule TwoSumProofTest do
     # 5W1H | Who: prover + future AI reader. What: the three "equivalent" solutions DISAGREE with no solution — brute nil, rec [], reduce_while leaks the map, pattern crashes (missing [] clause). When/Where: article assumes exactly one solution, never covers miss. How: asserts + assert_raise. Why: hidden contract divergence.
     # STAR | Situation: [1,2,3]/100 has no pair. Task: prove each behavior. Action: call all four. Result: nil, [], %{1=>0,2=>1,3=>2}, FunctionClauseError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | two_sum([3,2,4], 6)   (TwoSumPattern — map holds COMPLEMENTS)
+    #        {3,0}: is_map_key(%{}, 3)?            no  → put 6-3=3 → %{3=>0}
+    #        {2,1}: is_map_key(%{3=>0}, 2)?        no  → put 6-2=4 → %{3=>0,4=>1}
+    #        {4,2}: is_map_key(%{3=>0,4=>1}, 4)?   yes → [map[4], 2]
+    #        ▼ [1,2]
+    #
+    # FLOW | two_sum([1,2,3], 100)   (no solution — the four diverge)
+    #        Brute        → [i,j] never matches → Enum.find_value returns nil → nil
+    #        Rec          → find([], …, map, 3) hits find([], …) → []
+    #        ReduceWhile  → never halts → the MAP leaks: %{1=>0, 2=>1, 3=>2}
+    #        Pattern      → helper([], …) has NO clause → FunctionClauseError
     test "no-solution inputs diverge per implementation" do
       assert TwoSumBrute.two_sum([1, 2, 3], 100) == nil
       assert TwoSumRec.two_sum([1, 2, 3], 100) == []
@@ -1402,6 +1437,13 @@ defmodule MedianProofTest do
   use ExUnit.Case, async: true
 
   describe "Median: LeetCode examples and shape" do
+    # FLOW | find_median_sorted_arrays([1,3], [2])   (MedianBrute)
+    #        [1,3] ++ [2] → sort → [1,2,3] → len 3 (odd) → Enum.at(1) * 1.0
+    #        ▼ 2.0
+    #
+    # FLOW | find_median_sorted_arrays([], [])   (MedianBrute)
+    #        merged [] → len 0 (even) → Enum.at(-1) = nil, Enum.at(0) = nil
+    #        ✗ ArithmeticError (nil + nil)
     # 5W1H | Who: reader. What: brute force passes both LeetCode examples plus one-empty, swapped, negative/zero inputs — always float. When/Where: article Solution 1. How: equality + is_float asserts. Why: baseline correctness.
     # STAR | Situation: [1,3]/[2], [1,2]/[3,4], [1,2,3]/[], [2]/[1,3], negatives. Task: lock outputs. Action: find_median each. Result: 2.0, 2.5, 2.0, 2.0, -0.5, all floats.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
@@ -1461,6 +1503,15 @@ defmodule MedianProofTest do
     # 5W1H | Who: prover + future AI reader. What: BEHAVIORAL DIFFERENCE — float sentinels assume inputs within ±1e308; beyond that the partition logic corrupts and raises RuntimeError, while atom sentinels stay exact (only float conversion can overflow). When/Where: article never bounds its inputs. How: assert_raise on 10^400. Why: sentinel choice is a hidden precondition.
     # STAR | Situation: [10^400]/[]. Task: prove divergence. Action: run both versions. Result: float raises RuntimeError("No valid partition found"); atom raises ArithmeticError (honest 1.0e400 overflow).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | find_median_sorted_arrays([10^400], [])   (sentinels diverge)
+    #        MedianAtomBS :  left/right stay :neg_infinity/:infinity — no comparison against them
+    #                        → odd branch → max_left * 1.0 → big * 1.0 overflows
+    #                        ✗ ArithmeticError
+    #        MedianFloatBS:  left1 = -1.0e308, right1 = 1.0e308, left2 = 10^400
+    #                        cond: left2 (10^400) > right1 (1.0e308) → {:cont, {1, 0}}
+    #                        range 0..0 exhausted → result is a 2-tuple
+    #                        case {left1,right1,left2,right2,total} does not match → fallback
+    #                        ✗ RuntimeError "No valid partition found"
     test "sentinels diverge beyond float range" do
       big = 10 ** 400
 
@@ -1613,6 +1664,17 @@ defmodule AddTwoNumbersProofTest do
     # 5W1H | Who: reader. What: recursive pattern-matching version passes all three LeetCode examples plus final-carry and uneven lengths. When/Where: article Solution 2. How: struct→list asserts. Why: the recommended optimal approach.
     # STAR | Situation: [2,4,3]+[5,6,4], [0]+[0], 7×9+4×9, [9]+[1], [1,8]+[0]. Task: lock outputs. Action: add_two_numbers each. Result: [7,0,8], [0], [8,9,9,9,0,0,0,1], [0,1], [1,8].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | add_two_numbers([2,4,3], [5,6,4])   (AddTwoNumbersRecursive)
+    #        carry 0: 2+5=7 → {7, 0} → recurse([4,3],[6,4],0)
+    #        carry 0: 4+6=10 → {0, 1} → recurse([3],[4],1)
+    #        carry 1: 3+4+1=8 → {8, 0} → recurse(nil,nil,0) → nil
+    #        ▼ 7 → 0 → 8 → nil  =  [7,0,8]
+    #
+    # FLOW | add_two_numbers([9,9,9,9,9,9,9], [9,9,9,9])   (uneven + final carry)
+    #        9+9  =18 → 8, c=1 | 9+9+1=19 → 9, c=1 | 9+9+1=19 → 9, c=1 | 9+9+1=19 → 9, c=1
+    #        9+nil+1=10 → 0, c=1 | 9+nil+1=10 → 0, c=1 | 9+nil+1=10 → 0, c=1
+    #        nil+nil+1 → carry>0 clause → {val: 1}
+    #        ▼ [8,9,9,9,0,0,0,1]
     test "recursive version passes all examples and edges" do
       assert AddTwoNumbersRecursive.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
       assert AddTwoNumbersRecursive.add_two_numbers(from_list([0]), from_list([0])) |> to_list() == [0]
@@ -1647,6 +1709,12 @@ defmodule AddTwoNumbersProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — integer-conversion returns digits FORWARD ([8,0,7]) because build_list prepends least-significant-first. When/Where: article Solution 1. How: assert actual + refute expected. Why: prepend-direction confusion.
     # STAR | Situation: 342+465=807, article implies [7,0,8]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | add_two_numbers([2,4,3], [5,6,4])   (AddTwoNumbersConvert)
+    #        list_to_integer([2,4,3], 0, 1) = 2*1 + 4*10 + 3*100 = 342
+    #        list_to_integer([5,6,4], 0, 1) = 465
+    #        sum = 807
+    #        build_list(807, nil): 807→7 | 80→0 | 8→8 | 0→stop
+    #        ▼ LN{8, LN{0, LN{7}}} = [8,0,7]     ← article error: LSB prepended, never reversed
     test "conversion version returns forward order" do
       assert AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
       refute AddTwoNumbersConvert.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
@@ -1655,6 +1723,12 @@ defmodule AddTwoNumbersProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — accumulator version returns [8,0,7], contradicting the "built in the correct order" claim; prepending LSB-first yields MSB-first. When/Where: article Solution 3. How: assert actual + refute expected. Why: same prepend-direction confusion, plus a false correctness claim.
     # STAR | Situation: [2,4,3]+[5,6,4]. Task: prove actual. Action: add_two_numbers. Result: [8,0,7], refutes [7,0,8].
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | add_two_numbers([2,4,3], [5,6,4])   (AddTwoNumbersAcc — same digits, reversed output)
+    #        7 → acc = LN{7, nil}
+    #        10 → acc = LN{0, LN{7}}
+    #        8  → acc = LN{8, LN{0, LN{7}}}
+    #        base case returns acc AS-IS — never reversed
+    #        ▼ [8,0,7]                     ← article error: 807 reads backwards
     test "accumulator version returns forward order" do
       assert AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [8, 0, 7]
       refute AddTwoNumbersAcc.add_two_numbers(from_list([2, 4, 3]), from_list([5, 6, 4])) |> to_list() == [7, 0, 8]
@@ -1663,6 +1737,12 @@ defmodule AddTwoNumbersProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — plain-list version misaligns place values on UNEVEN lengths: reversing then pairing head-to-head aligns MSB-with-MSB, but addition needs LSB-with-LSB; 81+0 yields [8,1] (=18). When/Where: article Solution 4, never tested uneven. How: assert actual wrong value. Why: reverse-then-zip only works for equal lengths.
     # STAR | Situation: [1,8]+[0] is 81+0=81, expect [1,8]. Task: prove actual. Action: add_two_numbers. Result: [8,1] (wrong value, not just order).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | add_two_numbers([1,8], [0])   (AddTwoNumbersLists — 81 + 0)
+    #        Enum.reverse([1,8]) = [8,1]   ← head is now the TENS digit of 81
+    #        Enum.reverse([0])   = [0]     ← head is the UNITS digit of 0
+    #        do_add pairs head-to-head: 8+0=8, then 1+0=1 → acc = [1,8]
+    #        Enum.reverse(acc) = [8,1]
+    #        ▼ [8,1]   → reads as 18, not 81     ← article error: reverse-then-zip only aligns equal lengths
     test "plain-list version misaligns uneven lengths" do
       assert AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [8, 1]
       refute AddTwoNumbersLists.add_two_numbers([1, 8], [0]) == [1, 8]
@@ -1756,6 +1836,13 @@ defmodule SubstrProofTest do
     # | 3 | a    | 2    | 2   | %{"a"=>3, "b"=>2}  |
     #          ▼ elem(1) = 2
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | length_of_longest_substring("dvdf")
+    #        | i | char | hit?        | left | max |
+    #        | 0 | d    | nil         | 0    | 1   |
+    #        | 1 | v    | nil         | 0    | 2   |
+    #        | 2 | d    | 0 ≥ 0       | 1    | 2   |
+    #        | 3 | f    | nil         | 1    | 3   |
+    #        ▼ 3
     test "all versions agree on examples, traps and edges" do
       cases = [
         {"abcabcbb", 3},
@@ -1912,6 +1999,10 @@ defmodule PalinProofTest do
     # 5W1H | Who: reader. What: brute force passes both LeetCode examples plus unambiguous cases (even, all-same, single, unicode). When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
     # STAR | Situation: "babad", "cbbd", "racecar", "abba", "a", "aaaa", "été", "abcde". Task: lock outputs. Action: longest_palindrome each. Result: "bab", "bb", "racecar", "abba", "a", "aaaa", "été", "a".
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | longest_palindrome("babad")   (PalinBrute) — different path, same answer
+    #        all substrings in i-major order → filter palindrome → max_by length (first max wins)
+    #        candidates of length 3: "bab" (i=0), "aba" (i=1)
+    #        ▼ "bab"
     test "brute force passes examples and cases" do
       assert PalinBrute.longest_palindrome("babad") == "bab"
       assert PalinBrute.longest_palindrome("cbbd") == "bb"
@@ -2088,6 +2179,9 @@ defmodule ZigzagProofTest do
     # row 0 ▼ "PAHN" | row 1 ▼ "APLSIIG" | row 2 ▼ "YIR"
     #          ▼ "PAHN" <> "APLSIIG" <> "YIR" = "PAHNAPLSIIGYIR"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | convert("A", 3)   (early exit)
+    #        num_rows (3) >= String.length("A") (1) → return input unchanged
+    #        ▼ "A"
     test "map simulation passes examples and edges" do
       assert ZigzagMap.convert("PAYPALISHIRING", 3) == "PAHNAPLSIIGYIR"
       assert ZigzagMap.convert("PAYPALISHIRING", 4) == "PINALSIGYAHRPI"
@@ -2122,6 +2216,11 @@ defmodule ZigzagProofTest do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — Solution 3 is an unfinished STUB: the unfold step body is only comments, so it halts immediately and every row is ""; both examples return "". When/Where: article "Mathematical Pattern". How: runtime-compile verbatim source (stderr captured for its unused-var warnings), assert "". Why: sketches presented as implementations.
     # STAR | Situation: verbatim math solution on both LeetCode examples. Task: prove empty results. Action: compile source, convert each. Result: "", "".
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | @verbatim_math_src
+    #        build_row → Stream.unfold(0, fn step -> # comments only end)
+    #        the step body evaluates to nil → unfold halts at element 0 → Enum.take_while → []
+    #        every row builds ""
+    #        ▼ "" for ALL inputs (article error: the "Mathematical Pattern" is a stub)
     test "math-pattern stub always returns empty string" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:mods, Code.compile_string(@verbatim_math_src)})
@@ -2244,6 +2343,10 @@ defmodule ReverseIntProofTest do
     # (123, 0) → (12, 3) → (1, 32) → (0, 321)
     #          ▼ 321
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | 120 → RevStr  : abs → 120 → "120" → String.reverse → "021" → String.to_integer → 21 → × sign(1) → in range → 21
+    # FLOW | 120 → RevMath : do_reverse(120, 0) → (12, 0) → (1, 2) → (0, 21) → 21 → × sign → 21
+    # FLOW | 120 → RevDigits: abs → 120 → Integer.digits → [1,2,0] → reverse → [0,2,1] → undigits → 21 → × sign → 21
+    # FLOW | 120 → RevSafe : do_reverse(120, 0, 1) → digit 0, res 0 → (12, 0, 1) → digit 2, res 0 → (1, 2, 1) → digit 1, res 2 → (0, 21, 1) → 21 → in range → 21
     test "all versions pass the four examples" do
       for {x, expected} <- [{123, 321}, {-123, -321}, {120, 21}, {1_534_236_469, 0}] do
         assert RevStr.reverse(x) == expected
@@ -2284,6 +2387,12 @@ defmodule ReverseIntProofTest do
     # 5W1H | Who: prover + future AI reader. What: SUBTLE — the safe-math `digit > 7` threshold encodes only MAX (…847); a reversal of exactly 2147483648 with negative sign is the valid MIN, but the pre-check returns 0. Unreachable under LeetCode constraints (it needs abs(x) = 8463847412), provable only with out-of-range input since Elixir has big ints. When/Where: article Solution 4. How: assert divergence on x = -8463847412. Why: thresholds copied from editorials carry hidden asymmetry.
     # STAR | Situation: x = -8463847412 (outside constraints). Task: expose asymmetry. Action: reverse with math vs safe versions. Result: -2147483648 vs 0.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | -8463847412   (the asymmetry the test exposes)
+    #        RevMath : do_reverse(8463847412, 0) → 2147483648 → × sign(-1) → -2147483648
+    #                  2147483648 fits as a MAGNITUDE → returns MIN
+    #        RevSafe : res grows: …214748364 → next digit 8 > 7 → pre-check fires
+    #                  → returns 0, even though -2147483648 is the valid MIN
+    #        ▼ -2147483648 vs 0
     test "safe pre-check is exact only within constraints" do
       assert RevMath.reverse(-8_463_847_412) == -2_147_483_648
       assert RevSafe.reverse(-8_463_847_412) == 0
@@ -2390,6 +2499,15 @@ defmodule AtoiProofTest do
     # skip " " → "-" sign, i=2 → digits 0, 4, 2 (acc 0 → 4 → 42)
     #          ▼ -1 * 42 = -42
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | my_atoi(" -042")   (AtoiRegex)
+    #        ~r/^\s*([+-]?\d+)/ on " -042" → [" -042", "-042"]   ← \s* ate the space
+    #        Integer.parse("-042") → {-42, ""} → clamp(-42)
+    #        ▼ -42
+    #
+    # FLOW | my_atoi(" -042")   (AtoiRec)
+    #        skip_whitespace_and_sign: i=0 " " → i=1; i=1 "-" → {2, -1}
+    #        parse_digits: 0 → acc 0; 4 → acc 4; 2 → acc 42; i=4 ≥ len → sign * acc
+    #        ▼ -42
     test "all versions pass the five examples" do
       for {s, expected} <- [
             {"42", 42},
@@ -2439,6 +2557,11 @@ defmodule AtoiProofTest do
     # 5W1H | Who: prover + future AI reader. What: INTERNAL CONTRADICTION — the regex version skips ALL whitespace (\s: tab, newline), while the article's own pitfall rule says only ' ' counts and Solutions 2/3 enforce exactly that. When/Where: article Solution 1 vs its pitfalls + Solutions 2/3. How: assert divergence on "\t42" and "\n-42". Why: \s vs " " is a real spec fork.
     # STAR | Situation: leading tab/newline inputs. Task: prove the split. Action: my_atoi on all three. Result: regex 42/-42 vs 0/0 on the other two.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | my_atoi("\t42")   (the divergence)
+    #        AtoiRegex : ^\s* matches "\t"         → 42
+    #        AtoiRec   : skip_whitespace only skips " " → "\t" is not a digit → 0
+    #        AtoiParse : String.trim_leading(s, " ") leaves "\t42" → Integer.parse → :error → 0
+    #        ▼ 42  vs  0  vs  0
     test "tab and newline split the implementations" do
       assert AtoiRegex.my_atoi("\t42") == 42
       assert AtoiRec.my_atoi("\t42") == 0
@@ -2531,6 +2654,8 @@ defmodule PalNumProofTest do
     # 5W1H | Who: reader. What: string version passes the LeetCode examples plus single digits, trailing zeros, even/odd lengths. When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
     # STAR | Situation: 121, -121, 10, 0, 5, 1221, 12321, 123, 100, 1001. Task: lock outputs. Action: is_palindrome each. Result: true, false, false, true, true, true, true, false, false, true.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | is_palindrome(121) → PalStr: "121" == String.reverse("121") → "121" == "121" → true
+    # FLOW | is_palindrome(10)  → PalStr: "10" == "01" → false
     test "string version passes examples and edges" do
       for {x, expected} <- [
             {121, true},
@@ -2560,6 +2685,19 @@ defmodule PalNumProofTest do
     # 5W1H | Who: reader. What: FIXED half reversal (tuple version) matches on every case. When/Where: article corrected Solution 4. How: equality asserts. Why: gold-standard correctness.
     # STAR | Situation: same ten inputs. Task: lock agreement. Action: is_palindrome each. Result: identical outputs.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | is_palindrome(121)   (PalHalfFixed — the tuple version)
+    #        reverse_half(121, 0): 121 > 0  → (12, 1)
+    #                            12  > 1  → (1, 12)
+    #                            1   > 12? no → {1, 12}      ← returns BOTH halves
+    #        first_half(1) == reversed(12)? no
+    #        first_half(1) == div(12,10)=1? yes
+    #        ▼ true
+    #
+    # FLOW | is_palindrome(121)   (PalHalfBroken — same walk, wrong comparison)
+    #        reverse_half returns just 12
+    #        x(121) == 12? no
+    #        x(121) == div(12,10)=1? no
+    #        ▼ false     ← article error: compares x against the reversed HALF
     test "fixed half reversal matches string version" do
       for x <- [121, -121, 10, 0, 5, 1221, 12321, 123, 100, 1001] do
         assert PalHalfFixed.is_palindrome(x) == PalStr.is_palindrome(x)
@@ -2580,6 +2718,10 @@ defmodule PalNumProofTest do
     # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — two-pointer on a SINGLE digit builds 0..-1 (decreasing range, warns) and compares the char against out-of-range nil, returning false for true palindromes 0-9. When/Where: article Solution 2, n = 1. How: assert false with stderr captured. Why: single-element range edge.
     # STAR | Situation: is_palindrome(5). Task: prove the wrong answer. Action: run with stderr captured. Result: false (plus Range warning).
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | is_palindrome(5)   (PalTwoPtr)
+    #        chars ["5"], n=1 → 0..(div(1,2)-1) = 0..-1   ← decreasing range → warning
+    #        i=0: chars[0]==chars[0] ✓ → i=-1: Enum.at(["5"],-1)="5" vs Enum.at(["5"],1)=nil ✗
+    #        ▼ false (correct answer would be true)
     test "two-pointer fails single digits" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:res, PalTwoPtr.is_palindrome(5)})
@@ -2602,6 +2744,10 @@ defmodule PalNumProofTest do
     # 5W1H | Who: prover + future AI reader. What: FACTUAL ERROR — article claims div(-121, 10) returns -13; Elixir div truncates toward zero, so it is -12 (floor_div would give -13). rem(-121, 10) == -1 is correct. When/Where: article pitfalls on negative rem/div. How: equality asserts. Why: truncated vs floored division.
     # STAR | Situation: div(-121, 10), rem(-121, 10). Task: prove actual values. Action: evaluate both. Result: -12 (refutes -13), -1.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | div(-121, 10)
+    #        Elixir div truncates toward zero → -12
+    #        (floor_div would give -13 — the article's claim)
+    #        ▼ -12,  and rem(-121, 10) → -1
     test "negative div truncates toward zero" do
       assert div(-121, 10) == -12
       refute div(-121, 10) == -13
@@ -2820,6 +2966,12 @@ defmodule RegexProofTest do
     # a* one: [a,b] vs [a,*,b] → zero: [a,b] vs [b] ✗ → one: [b] vs [a,*,b]
     #   → zero: [b] vs [b] ✓ → true
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | is_match("aab", "c*a*b")   (RegexNaive)
+    #        match([a,a,b], [c,*,a,*,b]) → c* zero → match([a,a,b], [a,*,b])
+    #          a* zero → match([a,a,b], [b]) → a vs b ✗ → backtrack
+    #          a* one  → match([a,b], [a,*,b]) → zero → match([a,b],[b]) ✗
+    #                                              → one → match([b],[a,*,b]) → zero → match([b],[b]) ✓
+    #        ▼ true
     test "naive recursion passes examples and extras" do
       for {s, p, expected} <- @cases do
         assert RegexNaive.is_match(s, p) == expected
@@ -2847,6 +2999,14 @@ defmodule RegexProofTest do
     # 5W1H | Who: reader. What: bottom-up DP with the ONE-LINE init fix (flat generators) agrees with naive on all non-empty cases. When/Where: article Solution 3 corrected. How: equality asserts. Why: proves the recurrence; only the init was broken.
     # STAR | Situation: eight cases with m,n >= 1. Task: lock agreement. Action: is_match each. Result: identical outputs.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | is_match("a", "a*")   (RegexDPFixed)
+    #        m=1 n=2 → dp is 2×3, all false, then {0,0}=true
+    #        j-loop: j=1 p[0]="a" not "*" → skip
+    #                j=2 p[1]="*" and dp[{0,0}]=true → dp[{0,2}]=true
+    #        i=1 j=1: s="a" p="a"  → dp[{1,1}] = dp[{0,0}] = true
+    #        i=1 j=2: p="*" p_prev="a"; zero=dp[{1,0}]=false
+    #                 one = ("a"=="a") and dp[{0,2}]=true → dp[{1,2}]=true
+    #        ▼ dp[{1,2}] = true
     test "fixed bottom-up agrees on non-empty inputs" do
       for {s, p, expected} <- Enum.reject(@cases, fn {s, p, _} -> s == "" or p == "" end) do
         assert RegexDPFixed.is_match(s, p) == expected
@@ -2876,6 +3036,11 @@ defmodule RegexProofTest do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim bottom-up DP crashes on ANY input: nested `for i <- 0..m, into: %{} do <map>` tries to collect maps as entries (`:maps.from_list` gets maps, not tuples) → ArgumentError before any matching. When/Where: article Solution 3 table init. How: runtime-compile verbatim source, assert_raise on apply. Why: for-into shape must yield entries, not collections. Fix: `for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}`.
     # STAR | Situation: verbatim DP on ("aa", "a"). Task: prove the crash. Action: compile source, is_match. Result: ArgumentError.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | @verbatim_dp_src
+    #        for i <- 0..m, into: %{} do for j <- 0..n, into: %{} do {{i,j}, false} end end
+    #        the OUTER body returns a MAP; Enum.into(%{}, [map, map, …]) needs {k,v} tuples
+    #        ✗ ArgumentError   (article error)
+    #        FIX: for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}
     test "verbatim bottom-up crashes on table init" do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         send(self(), {:mods, Code.compile_string(@verbatim_dp_src)})
@@ -3026,6 +3191,18 @@ defmodule WaterProofTest do
     # (l=0,r=1): min(4,3)*1 = 3 → r=0 → halt
     #          ▼ 16
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | max_area([1,8,6,2,5,4,8,3,7])   (WaterRec / WaterBrute → 49)
+    #        | l | r | h[l] | h[r] | area = min·(r-l) | best | move |
+    #        | 0 | 8 | 1    | 7    | 8                | 8    | l++  |
+    #        | 1 | 8 | 8    | 7    | 49               | 49   | r--  |  ← 7·7
+    #        | 1 | 7 | 8    | 3    | 18               | 49   | r--  |
+    #        | 1 | 6 | 8    | 8    | 40               | 49   | r--  |
+    #        | 1 | 5 | 8    | 4    | 16               | 49   | r--  |
+    #        | 1 | 4 | 8    | 5    | 15               | 49   | r--  |
+    #        | 1 | 3 | 8    | 2    | 4                | 49   | r--  |
+    #        | 1 | 2 | 8    | 6    | 6                | 49   | r--  |
+    #        | 1 | 1 | —    | —    | l >= r           | 49   | halt |
+    #        ▼ 49
     test "recursive two-pointer matches brute force" do
       for {h, expected} <- @cases do
         assert WaterRec.max_area(h) == expected
@@ -3046,6 +3223,12 @@ defmodule WaterProofTest do
     # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim reduce_while destructures `{_, max_area}` but the accumulator is always the 3-tuple {left, right, best}, so EVERY input raises MatchError. When/Where: article Solution 2 alternative. How: assert_raise on three inputs. Why: acc shape must match the pattern.
     # STAR | Situation: verbatim version on [1,1], the big example, [4,3,2,1,4]. Task: prove the crash. Action: max_area each. Result: MatchError thrice.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | @verbatim reduce_while   (WaterRwVerbatim)
+    #        reduce_while(0..n, {0, n-1, 0}, fn _, {left,right,best} -> … {:halt, {left,right,best}} end)
+    #        accumulator is ALWAYS a 3-tuple
+    #        the final destructure is {_, max_area}  — a 2-tuple pattern
+    #        ✗ MatchError on EVERY input   (article error)
+    #        FIX: {_, _, max_area} = …
     test "verbatim reduce_while raises MatchError on any input" do
       for h <- [[1, 1], [1, 8, 6, 2, 5, 4, 8, 3, 7], [4, 3, 2, 1, 4]] do
         assert_raise MatchError, fn ->
@@ -3128,6 +3311,19 @@ defmodule RomanProofTest do
     # 1994 → M → 994 → CM → 94 → XC → 4 → IV → 0
     #          ▼ "M" <> "CM" <> "XC" <> "IV" = "MCMXCIV"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | int_to_roman(1994)   (RomanGreedy)
+    #        | num  | mapping matched | acc (pre-reverse)      |
+    #        | 1994 | 1000 → "M"      | ["M"]                  |
+    #        | 994  | 900  → "CM"     | ["CM","M"]             |
+    #        | 94   | 90   → "XC"     | ["XC","CM","M"]        |
+    #        | 4    | 4    → "IV"     | ["IV","XC","CM","M"]   |
+    #        | 0    | base case       | Enum.reverse |> join   |
+    #        ▼ "MCMXCIV"
+    #
+    # FLOW | int_to_roman(3999)   (the MMM trap)
+    #        1000 M → 2999 | 1000 M → 1999 | 1000 M → 999
+    #        900 CM → 99 | 90 XC → 9 | 9 IX → 0
+    #        ▼ "MMMCMXCIX"   ← three Ms, never four
     test "greedy passes examples and edges" do
       for {n, expected} <- @cases do
         assert RomanGreedy.int_to_roman(n) == expected
@@ -3137,6 +3333,12 @@ defmodule RomanProofTest do
     # 5W1H | Who: reader. What: lookup-table version matches greedy on every case above. When/Where: article Solution 2. How: equality asserts. Why: place-value decomposition correctness.
     # STAR | Situation: same 16 inputs. Task: lock agreement. Action: int_to_roman each. Result: identical outputs.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | int_to_roman(1994)   (RomanTable — no loop, pure indexing)
+    #        div(1994,1000) = 1               → thousands[1] = "M"
+    #        div(rem(1994,1000)=994, 100) = 9 → hundreds[9]  = "CM"
+    #        div(rem(1994,100)=94, 10) = 9    → tens[9]      = "XC"
+    #        rem(1994,10) = 4                 → ones[4]      = "IV"
+    #        ▼ "MCMXCIV"
     test "lookup table matches greedy" do
       for {n, expected} <- @cases do
         assert RomanTable.int_to_roman(n) == expected
@@ -3257,6 +3459,35 @@ defmodule RomToIntProofTest do
     # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus every subtractive pair, the max numeral and empty string. When/Where: article examples + edges. How: equality asserts per version. Why: baseline parsing contract.
     # STAR | Situation: twelve inputs. Task: lock outputs. Action: roman_to_int each on all three. Result: identical correct values everywhere.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | roman_to_int("MCMXCIV")   (RomToIntReduce — left-to-right, subtract 2×prev)
+    #        | char | cur  | prev | sum                              |
+    #        | M    | 1000 | 0    | 1000                             |
+    #        | C    | 100  | 1000 | 1000 + 100 = 1100                |
+    #        | M    | 1000 | 100  | 1100 + 1000 - 200 = 1900         |  ← 2×100 subtracted
+    #        | X    | 10   | 1000 | 1910                             |
+    #        | C    | 100  | 10   | 1910 + 100 - 20 = 1990           |
+    #        | I    | 1    | 100  | 1991                             |
+    #        | V    | 5    | 1    | 1991 + 5 - 2 = 1994              |
+    #        ▼ 1994
+    #
+    # FLOW | roman_to_int("MCMXCIV")   (RomToIntPat — clause order is the algorithm)
+    #        ["C","M"] matches BEFORE ["C"] and ["M"] → 900
+    #        ["X","C"] matches BEFORE ["X"] and ["C"] → 90
+    #        ["I","V"] matches BEFORE ["I"] and ["V"] → 4
+    #        remaining "M" → 1000
+    #        ▼ 900 + 90 + 4 + 1000 = 1994
+    #
+    # FLOW | roman_to_int("MCMXCIV")   (RomToIntRtl — reverse, then current >= prev ? + : -)
+    #        reversed = V,I,C,X,M,C,M
+    #        | char | cur  | prev | sum              | rule      |
+    #        | V    | 5    | 0    | 5                | +         |
+    #        | I    | 1    | 5    | 4                | -         |  ← 1 < 5
+    #        | C    | 100  | 1    | 104              | +         |
+    #        | X    | 10   | 100  | 94               | -         |
+    #        | M    | 1000 | 10   | 1094             | +         |
+    #        | C    | 100  | 1000 | 994              | -         |
+    #        | M    | 1000 | 100  | 1994             | +         |
+    #        ▼ 1994
     test "all versions pass examples and edges" do
       for {s, expected} <- @cases do
         assert RomToIntReduce.roman_to_int(s) == expected
@@ -3369,6 +3600,26 @@ defmodule LcpProofTest do
     # vs "flow": "flower"→"flowe"→"flow" ✓ → vs "flight": "flow"→"flo"→"fl" ✓
     #          ▼ "fl"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | longest_common_prefix(["flower","flow","flight"])   (LcpHoriz)
+    #        prefix "flower" ; "flow"   starts_with? → no
+    #          slice(0..-2) → "flowe" → no → "flow" → yes        → prefix = "flow"
+    #        prefix "flow"   ; "flight" starts_with? → no
+    #          "flo" → no → "fl" → yes                            → prefix = "fl"
+    #        ▼ "fl"
+    #
+    # FLOW | longest_common_prefix(["flower","flow","flight"])   (LcpVert)
+    #        first = "flower", rest = ["flow","flight"], chars = [f,l,o,w,e,r]
+    #        | i | char | rest[0][i] | rest[1][i] | action            |
+    #        | 0 | f    | f          | f          | cont              |
+    #        | 1 | l    | l          | l          | cont              |
+    #        | 2 | o    | o          | i          | halt → slice(0,2) |
+    #        ▼ "fl"
+    #
+    # FLOW | longest_common_prefix(["flower","flow","flight"])   (LcpSort)
+    #        sorted = ["flight","flow","flower"] ; first = "flight", last = "flower"
+    #        zip graphemes → [f,f],[l,l],[i,o],[g,w],[h,e],[t,r]
+    #        take_while equal → [f,f],[l,l]
+    #        ▼ "fl"
     test "all versions pass examples and battery" do
       for {strs, expected} <- @cases do
         assert LcpHoriz.longest_common_prefix(strs) == expected
@@ -3380,6 +3631,11 @@ defmodule LcpProofTest do
     # 5W1H | Who: prover. What: empty FIRST string is correct ("") on all three; vertical scanning builds 0..-1 (decreasing range, warns in plain scripts — silent under ExUnit's logger) before halting at column 0. When/Where: article never covers empty-first input. How: direct asserts for horiz/sort; stderr-captured asserts for vertical. Why: range edge + suite-output hygiene.
     # STAR | Situation: [""], ["", "abc"]. Task: prove "" everywhere. Action: run all three (vertical captured). Result: "" always.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | longest_common_prefix([""])
+    #        LcpHoriz → prefix "" ; shrink "" → "" → returns ""
+    #        LcpVert  → chars = [], n = 0 → 0..-1 (decreasing range) → reduce_while returns first
+    #        LcpSort  → sorted [""] ; zip [] → take_while [] → ""
+    #        ▼ ""   (LcpVert's 0..-1 warns — test captures stderr)
     test "empty first string returns empty" do
       for strs <- [[""], ["", "abc"]] do
         assert LcpHoriz.longest_common_prefix(strs) == ""
@@ -3582,6 +3838,16 @@ defmodule Sum3ProofTest do
     # i=2 dup skip; i=3,x=0: 0+1+2>0 → halt; i>=4 stop
     #          ▼ [[-1,-1,2],[-1,0,1]]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | three_sum([-1,0,1,2,-1,-4])   (Sum3Rec / Sum3Rw)
+    #        sorted = [-4,-1,-1,0,1,2]
+    #        | i | x  | skip?            | left,right walk                                        | acc so far                  |
+    #        | 0 | -4 | no               | 1,5: -3<0→2; 2,5: -3<0→3; 3,5: -2<0→4; 4,5: -1<0→5; l>=r | []                          |
+    #        | 1 | -1 | no (prev -4 ≠ -1)| 2,5: -1-1+2=0 → [-1,-1,2]; skip_l→3, skip_r→4           | [[-1,-1,2]]                 |
+    #        |   |    |                  | 3,4: -1+0+1=0 → [-1,0,1];  skip_l→4, skip_r→3; l>=r    | [[-1,0,1],[-1,-1,2]]        |
+    #        | 2 | -1 | YES (prev -1)    | skip                                                   | unchanged                   |
+    #        | 3 | 0  | no               | 4,5: 0+1+2=3>0 → right-- → l>=r                         | unchanged                   |
+    #        | 4 | —  | i >= n-2 → base  |                                                        | Enum.reverse → article order|
+    #        ▼ [[-1,-1,2],[-1,0,1]]
     test "all versions pass the three examples" do
       for {nums, expected} <- @examples do
         assert Sum3Brute.three_sum(nums) |> MapSet.new() == MapSet.new(expected)
@@ -3606,6 +3872,11 @@ defmodule Sum3ProofTest do
     # 5W1H | Who: prover. What: duplicate-heavy [0,0,0,0] yields exactly one triplet on all three — dup-skipping works without relying on the brute-force set. When/Where: article duplicate-skipping logic. How: exact asserts. Why: dedup is the core 3Sum difficulty.
     # STAR | Situation: [0,0,0,0]. Task: prove single triplet. Action: three_sum on all three. Result: [[0,0,0]] thrice.
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    # FLOW | three_sum([0,0,0,0])   (dup collapse)
+    #        sorted [0,0,0,0]
+    #        i=0: x=0, walk 1,3: 0+0+0=0 → [0,0,0]; skip_l: nums[1]==nums[2] → 2; skip_r: nums[3]==nums[2] → 2; l>=r
+    #        i=1: prev 0 == 0 → skip | i=2: skip | i >= 2 → base
+    #        ▼ [[0,0,0]]   ← exactly one, on all three versions
     test "duplicates collapse to one triplet" do
       assert Sum3Brute.three_sum([0, 0, 0, 0]) |> MapSet.new() == MapSet.new([[0, 0, 0]])
       assert Sum3Rec.three_sum([0, 0, 0, 0]) == [[0, 0, 0]]

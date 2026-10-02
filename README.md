@@ -182,6 +182,9 @@ table instead of arrows:
 Rules: one arrow = one transformation; use the real function names;
 terminate on the asserted value; for documented errors annotate the wrong
 step (`▼ [8, 0, 7]  ← article claims [7, 0, 8]`). Skip FLOW on one-liners.
+Two shapes: **spine** (arrow chain, ≥3 stages) and **inline**
+(`120 → abs → 120 → "120" → reverse → "021" → 21`, one `→` chain for short
+flows). Stateful loops get trace tables instead of arrows.
 
 **5. Corrections split stays frozen.**
 `test/corrections_test.exs` holds copies of every mistake row (errors, gaps,
