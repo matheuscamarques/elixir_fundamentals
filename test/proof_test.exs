@@ -4460,3 +4460,176 @@ defmodule FourSumProofTest do
     end
   end
 end
+
+# Remove Nth Node article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here.
+# RemTwoPass is verbatim Solution 1. RemFixedOnePass is a FIX by the prover:
+# the article's one-pass idea (n-gap + rebuild) is sound, but both printed
+# versions mutate (`slow.next = …`), which does not exist in Elixir.
+defmodule RemTwoPass do
+  @spec remove_nth_from_end(head :: ListNode.t() | nil, n :: integer) :: ListNode.t() | nil
+  def remove_nth_from_end(head, n) do
+    remove_at(head, list_length(head) - n)
+  end
+
+  defp list_length(nil), do: 0
+  defp list_length(%ListNode{next: next}), do: 1 + list_length(next)
+
+  defp remove_at(nil, _pos), do: nil
+  defp remove_at(%ListNode{next: next}, 0), do: next
+
+  defp remove_at(%ListNode{val: val, next: next}, pos) do
+    %ListNode{val: val, next: remove_at(next, pos - 1)}
+  end
+end
+
+defmodule RemFixedOnePass do
+  @spec remove_nth_from_end(head :: ListNode.t() | nil, n :: integer) :: ListNode.t() | nil
+  def remove_nth_from_end(head, n) do
+    case advance(head, n) do
+      nil -> head.next
+      fast -> remove_with_gap(head, fast)
+    end
+  end
+
+  defp advance(node, 0), do: node
+  defp advance(nil, _n), do: nil
+  defp advance(%ListNode{next: next}, n), do: advance(next, n - 1)
+
+  defp remove_with_gap(%ListNode{val: v, next: nxt}, %ListNode{next: nil}) do
+    %ListNode{val: v, next: nxt.next}
+  end
+
+  defp remove_with_gap(%ListNode{val: v, next: nxt}, %ListNode{next: fast_next}) do
+    %ListNode{val: v, next: remove_with_gap(nxt, fast_next)}
+  end
+end
+
+defmodule RemNthProofTest do
+  # Proof suite for the article "Solving LeetCode's Remove Nth Node From End
+  # of List in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  # ListNode is shared with the Add Two Numbers section (same struct).
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  # Solutions 2 and 3 VERBATIM (renamed modules only): both mutate via
+  # `slow.next = slow.next.next`, which is not valid Elixir.
+  @verbatim_two_ptr_src """
+  defmodule CkVerbatimTwoPtr do
+    def remove_nth_from_end(head, n) do
+      fast = advance(head, n)
+      if fast == nil do
+        head.next
+      else
+        slow = move_together(head, fast)
+        slow.next = slow.next.next
+        head
+      end
+    end
+  end
+  """
+
+  @verbatim_dummy_src """
+  defmodule CkVerbatimDummy do
+    def remove_nth_from_end(head, n) do
+      dummy = %ListNode{val: 0, next: head}
+      fast = advance(dummy, n + 1)
+      slow = move_together(dummy, fast)
+      slow.next = slow.next.next
+      dummy.next
+    end
+  end
+  """
+
+  describe "Remove Nth: correct versions" do
+    # 5W1H | Who: reader. What: two-pass version passes the LeetCode examples plus head/last/middle removals. When/Where: article Solution 1. How: struct→list asserts. Why: baseline count-then-remove correctness.
+    # STAR | Situation: [1..5]/2, [1]/1, [1,2]/1, head/middle removals. Task: lock outputs. Action: remove_nth_from_end each. Result: [1,2,3,5], [], [1], [2,3], [1,3].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "two-pass version passes examples and edges" do
+      assert RemTwoPass.remove_nth_from_end(from_list([1, 2, 3, 4, 5]), 2) |> to_list() == [1, 2, 3, 5]
+      assert RemTwoPass.remove_nth_from_end(from_list([1]), 1) |> to_list() == []
+      assert RemTwoPass.remove_nth_from_end(from_list([1, 2]), 1) |> to_list() == [1]
+      assert RemTwoPass.remove_nth_from_end(from_list([1, 2, 3]), 3) |> to_list() == [2, 3]
+      assert RemTwoPass.remove_nth_from_end(from_list([1, 2, 3]), 2) |> to_list() == [1, 3]
+    end
+
+    # 5W1H | Who: reader. What: fixed one-pass (gap + immutable rebuild) matches two-pass everywhere incl. a 10-long list. When/Where: prover fix for the article's mutation syntax. How: equality asserts. Why: proves the one-pass IDEA is sound, only the mutation isn't.
+    # STAR | Situation: six inputs incl. Enum 1..10. Task: lock agreement. Action: remove_nth_from_end each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed one-pass matches two-pass" do
+      for {l, n} <- [
+            {[1, 2, 3, 4, 5], 2},
+            {[1], 1},
+            {[1, 2], 1},
+            {[1, 2, 3], 3},
+            {[1, 2, 3], 1},
+            {Enum.to_list(1..10), 7}
+          ] do
+        assert RemFixedOnePass.remove_nth_from_end(from_list(l), n) |> to_list() ==
+                 RemTwoPass.remove_nth_from_end(from_list(l), n) |> to_list()
+      end
+    end
+
+    # 5W1H | Who: prover. What: 10k-node list completes on both (practical robustness at scale). When/Where: beyond-article scale check. How: length + spot asserts. Why: recursion depth behaves at realistic sizes.
+    # STAR | Situation: 1..10000, remove 5000th from end (=5001). Task: prove completion. Action: remove_nth_from_end both. Result: 9999 nodes, 5001 gone, 5000/5002 present.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "long list completes on both" do
+      for mod <- [RemTwoPass, RemFixedOnePass] do
+        result = apply(mod, :remove_nth_from_end, [from_list(Enum.to_list(1..10_000)), 5000]) |> to_list()
+        assert length(result) == 9999
+        refute 5001 in result
+        assert 5000 in result
+        assert 5002 in result
+      end
+    end
+  end
+
+  describe "Remove Nth: mutation syntax (article errors documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim one-pass version does not compile: `slow.next = slow.next.next` is imperative mutation smuggled into Elixir (remote call on match left side). When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: assignment is rebinding/matching, never field mutation.
+    # STAR | Situation: verbatim two-pointer source. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote slow.next/0 inside match).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim two-pointer does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_two_ptr_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim dummy-node version has the identical mutation flaw (`slow.next = …`), so the "most elegant" solution is equally uncompilable as printed. When/Where: article Solution 3. How: assert_raise CompileError on verbatim source, stderr captured. Why: same lesson, fancier wrapper.
+    # STAR | Situation: verbatim dummy source. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote slow.next/0 inside match).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim dummy version does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_dummy_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+  end
+
+  describe "Remove Nth: out-of-contract divergence (documented)" do
+    # 5W1H | Who: prover. What: n beyond length / nil head are outside constraints (1 <= n <= sz, sz >= 1) and the versions diverge: two-pass degrades gracefully (unchanged list / nil), fixed one-pass hits nil.next → BadMapError. When/Where: article never covers invalid input. How: asserts + assert_raise. Why: graceful-vs-crash contract off-spec.
+    # STAR | Situation: ([1], 5) and ([], 1). Task: prove each behavior. Action: remove_nth_from_end on both. Result: [1] vs nil; [] vs BadMapError.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "invalid inputs diverge per implementation" do
+      assert RemTwoPass.remove_nth_from_end(from_list([1]), 5) |> to_list() == [1]
+      assert RemFixedOnePass.remove_nth_from_end(from_list([1]), 5) == nil
+
+      assert RemTwoPass.remove_nth_from_end(nil, 1) == nil
+
+      assert_raise BadMapError, fn ->
+        RemFixedOnePass.remove_nth_from_end(nil, 1)
+      end
+    end
+  end
+end
