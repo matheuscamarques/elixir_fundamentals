@@ -2512,3 +2512,281 @@ defmodule PalNumProofTest do
     end
   end
 end
+
+# Regex Matching article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here.
+# RegexNaive is verbatim. RegexDPFixed is verbatim EXCEPT the table init
+# (flat generators instead of nested for-into-map — see bug test below).
+# Solution 2 (memoized) is compiled from a verbatim source string at test
+# time because its `_s`/`_p`-in-guard style emits compile warnings.
+defmodule RegexNaive do
+  @spec is_match(s :: String.t(), p :: String.t()) :: boolean
+  def is_match(s, p) do
+    match(String.graphemes(s), String.graphemes(p))
+  end
+
+  defp match([], []), do: true
+  defp match(_, []), do: false
+
+  defp match(s, [p_char, "*" | rest_p]) do
+    zero_occurrences = match(s, rest_p)
+
+    one_or_more =
+      case s do
+        [s_char | rest_s] when s_char == p_char or p_char == "." ->
+          match(rest_s, [p_char, "*" | rest_p])
+
+        _ ->
+          false
+      end
+
+    zero_occurrences or one_or_more
+  end
+
+  defp match([s_char | rest_s], [p_char | rest_p]) do
+    (s_char == p_char or p_char == ".") and match(rest_s, rest_p)
+  end
+
+  defp match([], _), do: false
+end
+
+defmodule RegexDPFixed do
+  @spec is_match(s :: String.t(), p :: String.t()) :: boolean
+  def is_match(s, p) do
+    s_chars = String.graphemes(s)
+    p_chars = String.graphemes(p)
+    m = length(s_chars)
+    n = length(p_chars)
+
+    dp = for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}
+    dp = Map.put(dp, {0, 0}, true)
+
+    dp =
+      Enum.reduce(1..n, dp, fn j, acc ->
+        if Enum.at(p_chars, j - 1) == "*" and Map.get(acc, {0, j - 2}, false) do
+          Map.put(acc, {0, j}, true)
+        else
+          acc
+        end
+      end)
+
+    dp =
+      Enum.reduce(1..m, dp, fn i, acc_i ->
+        Enum.reduce(1..n, acc_i, fn j, acc_j ->
+          s_char = Enum.at(s_chars, i - 1)
+          p_char = Enum.at(p_chars, j - 1)
+
+          cond do
+            p_char == "*" ->
+              p_prev = Enum.at(p_chars, j - 2)
+              zero_occ = Map.get(acc_j, {i, j - 2}, false)
+
+              one_or_more =
+                (s_char == p_prev or p_prev == ".") and
+                  Map.get(acc_j, {i - 1, j}, false)
+
+              Map.put(acc_j, {i, j}, zero_occ or one_or_more)
+
+            p_char == "." or p_char == s_char ->
+              Map.put(acc_j, {i, j}, Map.get(acc_j, {i - 1, j - 1}, false))
+
+            true ->
+              acc_j
+          end
+        end)
+      end)
+
+    Map.get(dp, {m, n}, false)
+  end
+end
+
+defmodule RegexProofTest do
+  # Proof suite for the article "Solving LeetCode's Regular Expression
+  # Matching in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Solution 2 (memoized), VERBATIM — `_s`/`_p` used inside the guard.
+  # Runtime-compiled: those names emit "underscored variable used" warnings.
+  @verbatim_memo_src """
+  defmodule VerbatimRegexMemo do
+    def is_match(s, p) do
+      {result, _memo} = match(String.graphemes(s), 0, String.graphemes(p), 0, %{})
+      result
+    end
+    defp char_at(list, i), do: Enum.at(list, i)
+    defp match(s, i, p, j, memo) do
+      key = {i, j}
+      case Map.get(memo, key) do
+        nil ->
+          {result, memo2} = compute_match(s, i, p, j, memo)
+          {result, Map.put(memo2, key, result)}
+        cached ->
+          {cached, memo}
+      end
+    end
+    defp compute_match(_s, i, _p, j, memo) when j >= length(_p), do: {i >= length(_s), memo}
+    defp compute_match(s, i, p, j, memo) do
+      p_char = char_at(p, j)
+      next_p = char_at(p, j + 1)
+      if next_p == "*" do
+        {zero_result, memo1} = match(s, i, p, j + 2, memo)
+        if zero_result do
+          {true, memo1}
+        else
+          s_char = char_at(s, i)
+          if s_char != nil and (s_char == p_char or p_char == ".") do
+            match(s, i + 1, p, j, memo1)
+          else
+            {false, memo1}
+          end
+        end
+      else
+        s_char = char_at(s, i)
+        if s_char != nil and (s_char == p_char or p_char == ".") do
+          match(s, i + 1, p, j + 1, memo)
+        else
+          {false, memo}
+        end
+      end
+    end
+  end
+  """
+
+  # Solution 3 (bottom-up DP), VERBATIM (renamed module only).
+  # Runtime-compiled: the nested for-into-map init crashes at runtime.
+  @verbatim_dp_src """
+  defmodule VerbatimRegexDP do
+    def is_match(s, p) do
+      s_chars = String.graphemes(s)
+      p_chars = String.graphemes(p)
+      m = length(s_chars)
+      n = length(p_chars)
+      dp =
+        for i <- 0..m, into: %{} do
+          for j <- 0..n, into: %{} do
+            {{i, j}, false}
+          end
+        end
+      dp = Map.put(dp, {0, 0}, true)
+      dp =
+        Enum.reduce(1..n, dp, fn j, acc ->
+          if Enum.at(p_chars, j - 1) == "*" and Map.get(acc, {0, j - 2}, false) do
+            Map.put(acc, {0, j}, true)
+          else
+            acc
+          end
+        end)
+      dp =
+        Enum.reduce(1..m, dp, fn i, acc_i ->
+          Enum.reduce(1..n, acc_i, fn j, acc_j ->
+            s_char = Enum.at(s_chars, i - 1)
+            p_char = Enum.at(p_chars, j - 1)
+            cond do
+              p_char == "*" ->
+                p_prev = Enum.at(p_chars, j - 2)
+                zero_occ = Map.get(acc_j, {i, j - 2}, false)
+                one_or_more =
+                  (s_char == p_prev or p_prev == ".") and
+                    Map.get(acc_j, {i - 1, j}, false)
+                Map.put(acc_j, {i, j}, zero_occ or one_or_more)
+              p_char == "." or p_char == s_char ->
+                Map.put(acc_j, {i, j}, Map.get(acc_j, {i - 1, j - 1}, false))
+              true ->
+                acc_j
+            end
+          end)
+        end)
+      Map.get(dp, {m, n}, false)
+    end
+  end
+  """
+
+  @cases [
+    {"aa", "a", false},
+    {"aa", "a*", true},
+    {"ab", ".*", true},
+    {"aab", "c*a*b", true},
+    {"", "a*", true},
+    {"a", "", false},
+    {"ab", ".*c", false},
+    {"mississippi", "mis*is*p*.", false},
+    {"aaa", "a*a", true},
+    {"ab", ".*..", true}
+  ]
+
+  describe "Regex: correct versions" do
+    # 5W1H | Who: reader. What: naive recursion passes the four LeetCode examples plus six extras (empty pattern/string, star edge, classic mississippi). When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
+    # STAR | Situation: ten (s, p) cases. Task: lock outputs. Action: is_match each. Result: false, true, true, true, true, false, false, false, true, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "naive recursion passes examples and extras" do
+      for {s, p, expected} <- @cases do
+        assert RegexNaive.is_match(s, p) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: verbatim memoized version agrees with naive on all ten cases (runtime-compiled: its `_s`/`_p` guard names warn at compile time). When/Where: article Solution 2. How: equality asserts via apply. Why: memoization preserves semantics.
+    # STAR | Situation: same ten cases. Task: lock agreement. Action: compile verbatim source (stderr captured), is_match each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim memoized version agrees with naive" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_memo_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      for {s, p, expected} <- @cases do
+        assert apply(mod, :is_match, [s, p]) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: bottom-up DP with the ONE-LINE init fix (flat generators) agrees with naive on all non-empty cases. When/Where: article Solution 3 corrected. How: equality asserts. Why: proves the recurrence; only the init was broken.
+    # STAR | Situation: eight cases with m,n >= 1. Task: lock agreement. Action: is_match each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed bottom-up agrees on non-empty inputs" do
+      for {s, p, expected} <- Enum.reject(@cases, fn {s, p, _} -> s == "" or p == "" end) do
+        assert RegexDPFixed.is_match(s, p) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: fixed bottom-up handles empty string/pattern (ranges 1..0 warn on Elixir 1.20, captured). When/Where: article base cases dp[0][j]. How: asserts with stderr captured. Why: empty-input contract of the table.
+    # STAR | Situation: ("", "a*"), ("a", ""). Task: lock outputs. Action: run with stderr captured. Result: true, false.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed bottom-up handles empty inputs" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:r1, RegexDPFixed.is_match("", "a*")})
+        send(self(), {:r2, RegexDPFixed.is_match("a", "")})
+      end)
+
+      receive do
+        {:r1, r1} -> assert r1 == true
+      end
+
+      receive do
+        {:r2, r2} -> assert r2 == false
+      end
+    end
+  end
+
+  describe "Regex: broken table init (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim bottom-up DP crashes on ANY input: nested `for i <- 0..m, into: %{} do <map>` tries to collect maps as entries (`:maps.from_list` gets maps, not tuples) → ArgumentError before any matching. When/Where: article Solution 3 table init. How: runtime-compile verbatim source, assert_raise on apply. Why: for-into shape must yield entries, not collections. Fix: `for i <- 0..m, j <- 0..n, into: %{}, do: {{i, j}, false}`.
+    # STAR | Situation: verbatim DP on ("aa", "a"). Task: prove the crash. Action: compile source, is_match. Result: ArgumentError.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim bottom-up crashes on table init" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_dp_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert_raise ArgumentError, fn ->
+        apply(mod, :is_match, ["aa", "a"])
+      end
+    end
+  end
+end
