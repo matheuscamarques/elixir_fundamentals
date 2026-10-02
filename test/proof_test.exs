@@ -2353,3 +2353,162 @@ defmodule AtoiProofTest do
     end
   end
 end
+
+# Palindrome Number article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all five
+# can coexist in one file. The first Solution 4 (half reversal returning only
+# the accumulator) is kept verbatim as PalHalfBroken — the article itself
+# walks through why it fails before presenting the tuple fix.
+defmodule PalStr do
+  @spec is_palindrome(x :: integer) :: boolean
+  def is_palindrome(x) do
+    original = Integer.to_string(x)
+    original == String.reverse(original)
+  end
+end
+
+defmodule PalTwoPtr do
+  @spec is_palindrome(x :: integer) :: boolean
+  def is_palindrome(x) do
+    chars = x |> Integer.to_string() |> String.graphemes()
+    n = length(chars)
+
+    0..(div(n, 2) - 1)
+    |> Enum.all?(fn i -> Enum.at(chars, i) == Enum.at(chars, n - 1 - i) end)
+  end
+end
+
+defmodule PalFullMath do
+  @spec is_palindrome(x :: integer) :: boolean
+  def is_palindrome(x) when x < 0, do: false
+  def is_palindrome(x) when x < 10, do: true
+  def is_palindrome(x) when rem(x, 10) == 0, do: false
+  def is_palindrome(x), do: x == reverse(x, 0)
+
+  defp reverse(0, acc), do: acc
+  defp reverse(n, acc), do: reverse(div(n, 10), acc * 10 + rem(n, 10))
+end
+
+defmodule PalHalfBroken do
+  @spec is_palindrome(x :: integer) :: boolean
+  def is_palindrome(x) when x < 0, do: false
+  def is_palindrome(x) when x < 10, do: true
+  def is_palindrome(x) when rem(x, 10) == 0, do: false
+
+  def is_palindrome(x) do
+    reversed = reverse_half(x, 0)
+    x == reversed or x == div(reversed, 10)
+  end
+
+  defp reverse_half(n, acc) when n > acc do
+    reverse_half(div(n, 10), acc * 10 + rem(n, 10))
+  end
+
+  defp reverse_half(_n, acc), do: acc
+end
+
+defmodule PalHalfFixed do
+  @spec is_palindrome(x :: integer) :: boolean
+  def is_palindrome(x) when x < 0, do: false
+  def is_palindrome(x) when x < 10, do: true
+  def is_palindrome(x) when rem(x, 10) == 0, do: false
+
+  def is_palindrome(x) do
+    {first_half, reversed} = reverse_half(x, 0)
+    first_half == reversed or first_half == div(reversed, 10)
+  end
+
+  defp reverse_half(n, acc) when n > acc do
+    reverse_half(div(n, 10), acc * 10 + rem(n, 10))
+  end
+
+  defp reverse_half(n, acc), do: {n, acc}
+end
+
+defmodule PalNumProofTest do
+  # Proof suite for the article "Solving LeetCode's Palindrome Number in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Palindrome Number: correct versions" do
+    # 5W1H | Who: reader. What: string version passes the LeetCode examples plus single digits, trailing zeros, even/odd lengths. When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
+    # STAR | Situation: 121, -121, 10, 0, 5, 1221, 12321, 123, 100, 1001. Task: lock outputs. Action: is_palindrome each. Result: true, false, false, true, true, true, true, false, false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "string version passes examples and edges" do
+      for {x, expected} <- [
+            {121, true},
+            {-121, false},
+            {10, false},
+            {0, true},
+            {5, true},
+            {1221, true},
+            {12321, true},
+            {123, false},
+            {100, false},
+            {1001, true}
+          ] do
+        assert PalStr.is_palindrome(x) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: full math reversal matches the string version on every case above. When/Where: article Solution 3. How: equality asserts. Why: optimal no-string correctness.
+    # STAR | Situation: same ten inputs. Task: lock agreement. Action: is_palindrome each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "full math reversal matches string version" do
+      for x <- [121, -121, 10, 0, 5, 1221, 12321, 123, 100, 1001] do
+        assert PalFullMath.is_palindrome(x) == PalStr.is_palindrome(x)
+      end
+    end
+
+    # 5W1H | Who: reader. What: FIXED half reversal (tuple version) matches on every case. When/Where: article corrected Solution 4. How: equality asserts. Why: gold-standard correctness.
+    # STAR | Situation: same ten inputs. Task: lock agreement. Action: is_palindrome each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed half reversal matches string version" do
+      for x <- [121, -121, 10, 0, 5, 1221, 12321, 123, 100, 1001] do
+        assert PalHalfFixed.is_palindrome(x) == PalStr.is_palindrome(x)
+      end
+    end
+
+    # 5W1H | Who: prover. What: two-pointer version is correct for multi-digit inputs (its bug needs a single digit). When/Where: article Solution 2, n >= 2. How: equality asserts. Why: isolates the working range.
+    # STAR | Situation: 121, 1221, 10, 123, 1001. Task: lock outputs. Action: is_palindrome each. Result: true, true, false, false, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "two-pointer version works for multi-digit inputs" do
+      for {x, expected} <- [{121, true}, {1221, true}, {10, false}, {123, false}, {1001, true}] do
+        assert PalTwoPtr.is_palindrome(x) == expected
+      end
+    end
+  end
+
+  describe "Palindrome Number: article errors (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR — two-pointer on a SINGLE digit builds 0..-1 (decreasing range, warns) and compares the char against out-of-range nil, returning false for true palindromes 0-9. When/Where: article Solution 2, n = 1. How: assert false with stderr captured. Why: single-element range edge.
+    # STAR | Situation: is_palindrome(5). Task: prove the wrong answer. Action: run with stderr captured. Result: false (plus Range warning).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "two-pointer fails single digits" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:res, PalTwoPtr.is_palindrome(5)})
+      end)
+
+      receive do
+        {:res, result} -> assert result == false
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE'S OWN TRACE ADMITS IT — first half-reversal compares the ORIGINAL x against the reversed half (121 vs 12), so every multi-digit palindrome returns false. When/Where: article Solution 4 before its self-correction. How: assert false on known palindromes. Why: compares wrong halves.
+    # STAR | Situation: 121, 1221, 12321, 1001. Task: prove the failure. Action: is_palindrome each. Result: false, false, false, false.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "first half-reversal rejects real palindromes" do
+      for x <- [121, 1221, 12321, 1001] do
+        assert PalHalfBroken.is_palindrome(x) == false
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: FACTUAL ERROR — article claims div(-121, 10) returns -13; Elixir div truncates toward zero, so it is -12 (floor_div would give -13). rem(-121, 10) == -1 is correct. When/Where: article pitfalls on negative rem/div. How: equality asserts. Why: truncated vs floored division.
+    # STAR | Situation: div(-121, 10), rem(-121, 10). Task: prove actual values. Action: evaluate both. Result: -12 (refutes -13), -1.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "negative div truncates toward zero" do
+      assert div(-121, 10) == -12
+      refute div(-121, 10) == -13
+      assert rem(-121, 10) == -1
+    end
+  end
+end
