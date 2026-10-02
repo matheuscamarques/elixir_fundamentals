@@ -2947,3 +2947,105 @@ defmodule WaterProofTest do
     end
   end
 end
+
+# Integer to Roman article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so both can
+# coexist in one file.
+defmodule RomanGreedy do
+  @spec int_to_roman(num :: integer) :: String.t()
+  def int_to_roman(num) do
+    mappings = [
+      {1000, "M"}, {900, "CM"}, {500, "D"}, {400, "CD"},
+      {100, "C"}, {90, "XC"}, {50, "L"}, {40, "XL"},
+      {10, "X"}, {9, "IX"}, {5, "V"}, {4, "IV"}, {1, "I"}
+    ]
+
+    build(num, mappings, [])
+  end
+
+  defp build(0, _mappings, acc), do: acc |> Enum.reverse() |> Enum.join()
+
+  defp build(num, [{value, symbol} | rest] = mappings, acc) do
+    if value <= num do
+      build(num - value, mappings, [symbol | acc])
+    else
+      build(num, rest, acc)
+    end
+  end
+end
+
+defmodule RomanTable do
+  @spec int_to_roman(num :: integer) :: String.t()
+  def int_to_roman(num) do
+    thousands = ["", "M", "MM", "MMM"]
+    hundreds = ["", "C", "CC", "CCC", "CD", "D", "DC", "DCC", "DCCC", "CM"]
+    tens = ["", "X", "XX", "XXX", "XL", "L", "LX", "LXX", "LXXX", "XC"]
+    ones = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"]
+
+    Enum.at(thousands, div(num, 1000)) <>
+      Enum.at(hundreds, div(rem(num, 1000), 100)) <>
+      Enum.at(tens, div(rem(num, 100), 10)) <>
+      Enum.at(ones, rem(num, 10))
+  end
+end
+
+defmodule RomanProofTest do
+  # Proof suite for the article "Solving LeetCode's Integer to Roman in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @cases [
+    {3, "III"},
+    {4, "IV"},
+    {9, "IX"},
+    {58, "LVIII"},
+    {1994, "MCMXCIV"},
+    {1, "I"},
+    {3999, "MMMCMXCIX"},
+    {40, "XL"},
+    {90, "XC"},
+    {400, "CD"},
+    {900, "CM"},
+    {49, "XLIX"},
+    {99, "XCIX"},
+    {444, "CDXLIV"},
+    {999, "CMXCIX"},
+    {3888, "MMMDCCCLXXXVIII"}
+  ]
+
+  describe "Roman: correct versions" do
+    # 5W1H | Who: reader. What: greedy version passes the five LeetCode examples plus subtractive forms, repeat-heavy numerals and both range ends. When/Where: article Solution 1. How: equality asserts. Why: greedy-with-subtractives correctness.
+    # STAR | Situation: 16 inputs incl. 3999 and 3888. Task: lock outputs. Action: int_to_roman each. Result: all match (note: 3999 is MMMCMXCIX, three Ms).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "greedy passes examples and edges" do
+      for {n, expected} <- @cases do
+        assert RomanGreedy.int_to_roman(n) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: lookup-table version matches greedy on every case above. When/Where: article Solution 2. How: equality asserts. Why: place-value decomposition correctness.
+    # STAR | Situation: same 16 inputs. Task: lock agreement. Action: int_to_roman each. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "lookup table matches greedy" do
+      for {n, expected} <- @cases do
+        assert RomanTable.int_to_roman(n) == expected
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: EXHAUSTIVE — both versions agree on the ENTIRE valid domain 1..3999 (zero mismatches), so no input in range can distinguish them. When/Where: article constraints. How: full-sweep assert. Why: strongest possible equivalence proof for a bounded domain.
+    # STAR | Situation: every n in 1..3999. Task: prove agreement. Action: compare both versions. Result: 0 mismatches.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "both versions agree on the whole domain" do
+      mismatches = Enum.reject(1..3999, fn n -> RomanGreedy.int_to_roman(n) == RomanTable.int_to_roman(n) end)
+
+      assert mismatches == []
+    end
+
+    # 5W1H | Who: prover. What: article's side claim — longest numeral in range is 15 chars (3888 = MMMDCCCLXXXVIII). When/Where: article complexity section. How: length assert. Why: pins the space-bound illustration.
+    # STAR | Situation: int_to_roman(3888). Task: prove length 15. Action: measure. Result: 15.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "longest numeral is fifteen chars" do
+      assert RomanGreedy.int_to_roman(3888) |> String.length() == 15
+    end
+  end
+end
