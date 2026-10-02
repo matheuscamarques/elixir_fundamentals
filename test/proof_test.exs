@@ -6686,3 +6686,134 @@ defmodule NextPermProofTest do
     end
   end
 end
+
+# Longest Valid Parentheses article code, inlined here (this repo never uses
+# /lib). NOTE: the article names versions `Solution`; renamed here.
+# The stack version matches `[top | rest]` but never uses `top` (verbatim
+# emits an unused-variable warning) — pinned as `_top` with this NOTE.
+defmodule LvpStack do
+  @spec longest_valid_parentheses(s :: String.t()) :: integer
+  def longest_valid_parentheses(s) do
+    s
+    |> String.graphemes()
+    |> do_solve(0, [-1], 0)
+  end
+
+  defp do_solve([], _i, _stack, max_len), do: max_len
+
+  defp do_solve(["(" | tail], i, stack, max_len) do
+    do_solve(tail, i + 1, [i | stack], max_len)
+  end
+
+  defp do_solve([")" | tail], i, [_top | rest], max_len) do
+    if rest == [] do
+      do_solve(tail, i + 1, [i], max_len)
+    else
+      do_solve(tail, i + 1, rest, max(max_len, i - hd(rest)))
+    end
+  end
+end
+
+defmodule LvpDP do
+  @spec longest_valid_parentheses(s :: String.t()) :: integer
+  def longest_valid_parentheses(s) do
+    s
+    |> String.graphemes()
+    |> dp([], 0)
+  end
+
+  defp dp([], _queue, result), do: result
+
+  defp dp(["(" | tail], queue, result) do
+    dp(tail, [0 | queue], result)
+  end
+
+  defp dp([")" | tail], queue, result) do
+    {new_queue, new_result} = pop_until(queue, [])
+    dp(tail, new_queue, max(result, new_result))
+  end
+
+  defp pop_until([], _), do: {[], 0}
+
+  defp pop_until([0 | tail], rest) do
+    n = List.first(tail)
+    n = if n, do: n, else: 0
+    tail = if n > 0, do: tl(tail), else: tail
+    result = Enum.sum(rest) + n + 2
+    {[result | tail], result}
+  end
+
+  defp pop_until([h | tail], rest) do
+    pop_until(tail, [h | rest])
+  end
+end
+
+defmodule LvpTwoPass do
+  @spec longest_valid_parentheses(s :: String.t()) :: integer
+  def longest_valid_parentheses(s) do
+    chars = String.graphemes(s)
+    max(scan(chars, 0, 0, 0, :left), scan(Enum.reverse(chars), 0, 0, 0, :right))
+  end
+
+  defp scan([], _left, _right, max_len, _dir), do: max_len
+
+  defp scan([char | tail], left, right, max_len, dir) do
+    {new_left, new_right} =
+      case char do
+        "(" -> {left + 1, right}
+        ")" -> {left, right + 1}
+      end
+
+    cond do
+      new_left == new_right ->
+        scan(tail, new_left, new_right, max(max_len, 2 * new_right), dir)
+
+      dir == :left and new_right > new_left ->
+        scan(tail, 0, 0, max_len, dir)
+
+      dir == :right and new_left > new_right ->
+        scan(tail, 0, 0, max_len, dir)
+
+      true ->
+        scan(tail, new_left, new_right, max_len, dir)
+    end
+  end
+end
+
+defmodule LvpProofTest do
+  # Proof suite for the article "Solving LeetCode's Longest Valid Parentheses
+  # in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @cases [
+    {"(()", 2},
+    {")()())", 4},
+    {"", 0},
+    {"()", 2},
+    {")(", 0},
+    {"((", 0},
+    {"))", 0},
+    {"()()", 4},
+    {"(()())", 6},
+    {")()(", 2},
+    {"(()(()", 2},
+    {"()((()))", 8},
+    {"()(()", 2},
+    {"(()))())(", 4},
+    {")()())()()(", 4}
+  ]
+
+  describe "LVP: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus barrier-heavy edges (leading/trailing unmatched, nesting, empty). When/Where: article examples 1-3 + edges. How: equality asserts per version. Why: baseline measure-not-just-verify correctness.
+    # STAR | Situation: 15 inputs. Task: lock lengths. Action: longest_valid_parentheses each on all three. Result: identical correct values everywhere.
+    # FLOW | (")()())", stack [-1]): i=0 ')' pops -1 → barrier [0]; i=1 '(' push; i=2 ')' pop → len 2-0=2; i=3 '(' push; i=4 ')' pop → len 4-0=4; i=5 ')' pop 0 → barrier [5] → max 4.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and battery" do
+      for {s, expected} <- @cases do
+        assert LvpStack.longest_valid_parentheses(s) == expected
+        assert LvpDP.longest_valid_parentheses(s) == expected
+        assert LvpTwoPass.longest_valid_parentheses(s) == expected
+      end
+    end
+  end
+end
