@@ -4736,3 +4736,188 @@ defmodule RemWorkingProofTest do
     end
   end
 end
+
+# Valid Parentheses article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here.
+# ParenRwFixed differs from the article in ONE place: `@matching[close]` in
+# the case guard is not guard-safe (Access.get/2), so the lookup moved into
+# the clause body via Map.get/2 — see the no-compile test below.
+defmodule ParenRec do
+  @spec is_valid(s :: String.t()) :: boolean
+  def is_valid(s) do
+    s
+    |> String.graphemes()
+    |> check([])
+  end
+
+  defp check([], stack), do: stack == []
+  defp check(["(" | rest], stack), do: check(rest, ["(" | stack])
+  defp check(["[" | rest], stack), do: check(rest, ["[" | stack])
+  defp check(["{" | rest], stack), do: check(rest, ["{" | stack])
+  defp check([")" | rest], ["(" | stack]), do: check(rest, stack)
+  defp check(["]" | rest], ["[" | stack]), do: check(rest, stack)
+  defp check(["}" | rest], ["{" | stack]), do: check(rest, stack)
+  defp check([_ | _], _), do: false
+end
+
+defmodule ParenRwFixed do
+  @matching %{")" => "(", "]" => "[", "}" => "{"}
+
+  @spec is_valid(s :: String.t()) :: boolean
+  def is_valid(s) do
+    s
+    |> String.graphemes()
+    |> Enum.reduce_while([], fn char, stack ->
+      case char do
+        open when open in ["(", "[", "{"] ->
+          {:cont, [open | stack]}
+
+        close ->
+          case stack do
+            [top | rest] ->
+              if Map.get(@matching, close) == top do
+                {:cont, rest}
+              else
+                {:halt, false}
+              end
+
+            _ ->
+              {:halt, false}
+          end
+      end
+    end)
+    |> case do
+      false -> false
+      [] -> true
+      _ -> false
+    end
+  end
+end
+
+defmodule ParenCancelVerbatim do
+  @spec is_valid(s :: String.t()) :: boolean
+  def is_valid(s) do
+    s
+    |> String.graphemes()
+    |> reduce_pairs()
+    |> Kernel.==([])
+  end
+
+  defp reduce_pairs(chars) do
+    reduced =
+      chars
+      |> Enum.reduce([], fn char, acc ->
+        case {acc, char} do
+          {["(" | rest], ")"} -> rest
+          {["[" | rest], "]"} -> rest
+          {["{" | rest], "}"} -> rest
+          _ -> [char | acc]
+        end
+      end)
+
+    if reduced == chars do
+      reduced
+    else
+      reduce_pairs(reduced)
+    end
+  end
+end
+
+defmodule ParenProofTest do
+  # Proof suite for the article "Solving LeetCode's Valid Parentheses in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Solution 2 VERBATIM (renamed module only): the case guard calls
+  # `@matching[close]`, i.e. Access.get/2 inside a guard.
+  @verbatim_rw_src """
+  defmodule CkVerbatimParenRw do
+    @matching %{")" => "(", "]" => "[", "}" => "{"}
+    def is_valid(s) do
+      s
+      |> String.graphemes()
+      |> Enum.reduce_while([], fn char, stack ->
+        case char do
+          open when open in ["(", "[", "{"] ->
+            {:cont, [open | stack]}
+          close ->
+            case stack do
+              [top | rest] when @matching[close] == top ->
+                {:cont, rest}
+              _ ->
+                {:halt, false}
+            end
+        end
+      end)
+    end
+  end
+  """
+
+  describe "Parentheses: correct versions" do
+    # 5W1H | Who: reader. What: recursive stack simulation passes the five LeetCode examples plus unclosed/unopened/mismatch/nesting edges and deep input. When/Where: article Solution 1. How: equality asserts. Why: baseline LIFO correctness.
+    # STAR | Situation: 5 examples + 11 edges incl. 1000-deep nesting. Task: lock outputs. Action: is_valid each. Result: true,true,false,true,false + edges as asserted.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "recursive version passes examples and edges" do
+      for {s, expected} <- [
+            {"()", true},
+            {"()[]{}", true},
+            {"(]", false},
+            {"([])", true},
+            {"([)]", false},
+            {"", true},
+            {"((", false},
+            {"))", false},
+            {")(", false},
+            {"{{{}}}", true},
+            {"()(()())", true},
+            {"(()", false},
+            {"())", false},
+            {"a", false},
+            {"([{}])", true},
+            {"{[}]", false}
+          ] do
+        assert ParenRec.is_valid(s) == expected
+      end
+
+      deep = String.duplicate("(", 1000) <> String.duplicate(")", 1000)
+      assert ParenRec.is_valid(deep) == true
+    end
+
+    # 5W1H | Who: reader. What: FIXED reduce_while (Map.get in body) matches the recursive version on every case above. When/Where: article Solution 2 corrected. How: equality asserts. Why: proves only the guard placement was broken.
+    # STAR | Situation: same battery. Task: lock agreement. Action: is_valid each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed reduce_while matches recursive version" do
+      for s <- ["()", "()[]{}", "(]", "([])", "([)]", "", "((", "))", ")(", "{{{}}}", "()(()())", "(()", "())", "a", "([{}])", "{[}]"] do
+        assert ParenRwFixed.is_valid(s) == ParenRec.is_valid(s)
+      end
+    end
+  end
+
+  describe "Parentheses: article errors (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim reduce_while does not compile: the case guard calls `@matching[close]` (Access.get/2), which is not guard-safe. When/Where: article Solution 2. How: assert_raise CompileError on verbatim source, stderr captured. Why: map access is not allowed in guards.
+    # STAR | Situation: verbatim Solution 2 source. Task: prove it fails. Action: Code.compile_string. Result: CompileError (cannot invoke remote Access.get/2 inside guard).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim reduce_while does not compile" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:raised, assert_raise(CompileError, fn -> Code.compile_string(@verbatim_rw_src) end)})
+      end)
+
+      receive do
+        {:raised, _} -> :ok
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim cancellation HANGS on "(]" and "([)]" (the article's own Examples 3 and 5): each pass builds the accumulator reversed, so with no cancellable pair the input ping-pongs between reverses and `reduced == chars` never holds. When/Where: article Solution 3. How: Task.yield timeout proves non-termination (brutally killed after); direct call proves "([])" still terminates. Why: reversed-accumulator fixpoint that never fixes.
+    # STAR | Situation: verbatim cancellation on "(]", "([)]", "([])". Task: prove hang, hang, true. Action: Task.async + yield 2s each (then kill), direct call for the last. Result: nil, nil, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim cancellation hangs on article examples 3 and 5" do
+      for s <- ["(]", "([)]"] do
+        task = Task.async(fn -> ParenCancelVerbatim.is_valid(s) end)
+        assert Task.yield(task, 2000) == nil
+        Task.shutdown(task, :brutal_kill)
+      end
+
+      assert ParenCancelVerbatim.is_valid("([])") == true
+    end
+  end
+end
