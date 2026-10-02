@@ -5650,6 +5650,7 @@ defmodule MergeKProofTest do
   end
 end
 
+
 # Swap Nodes in Pairs article code, inlined here (this repo never uses /lib).
 # NOTE: the article names versions `Solution`; renamed here.
 # ListNode is shared with the Add Two Numbers section (same struct).
@@ -5879,6 +5880,163 @@ defmodule KGroupProofTest do
 
       receive do
         {:raised, _} -> :ok
+      end
+    end
+  end
+end
+
+# Native-list versions of the linked-list problems (Elixir lists ARE linked
+# lists — no ListNode needed). Built for future struct-vs-native comparison:
+# same contract, idiomatic Enum/recursion, zero structs. ListNode is still
+# shared where struct versions are the reference (same struct as Add Two).
+defmodule NatAddTwo do
+  def add(l1, l2), do: do_add(l1, l2, 0)
+
+  defp do_add([], [], 0), do: []
+  defp do_add([], [], carry), do: [carry]
+
+  defp do_add([], [h | t], carry) do
+    sum = h + carry
+    [rem(sum, 10) | do_add([], t, div(sum, 10))]
+  end
+
+  defp do_add([h | t], [], carry) do
+    sum = h + carry
+    [rem(sum, 10) | do_add(t, [], div(sum, 10))]
+  end
+
+  defp do_add([a | ta], [b | tb], carry) do
+    sum = a + b + carry
+    [rem(sum, 10) | do_add(ta, tb, div(sum, 10))]
+  end
+end
+
+defmodule NatRemoveNth do
+  def remove_nth(list, n) do
+    idx = length(list) - n
+    Enum.take(list, idx) ++ Enum.drop(list, idx + 1)
+  end
+end
+
+defmodule NatMergeTwo do
+  def merge([], list2), do: list2
+  def merge(list1, []), do: list1
+
+  def merge([h1 | t1] = l1, [h2 | t2] = l2) do
+    if h1 <= h2 do
+      [h1 | merge(t1, l2)]
+    else
+      [h2 | merge(l1, t2)]
+    end
+  end
+end
+
+defmodule NatMergeK do
+  def merge_k([]), do: []
+  def merge_k(lists), do: do_merge_k(lists)
+
+  defp do_merge_k([single]), do: single
+
+  defp do_merge_k(lists) do
+    lists
+    |> Enum.chunk_every(2)
+    |> Enum.map(fn
+      [a, b] -> NatMergeTwo.merge(a, b)
+      [a] -> a
+    end)
+    |> do_merge_k()
+  end
+end
+
+defmodule NatSwap do
+  def swap([]), do: []
+  def swap([a]), do: [a]
+  def swap([a, b | rest]), do: [b, a | swap(rest)]
+end
+
+defmodule NatKGroup do
+  def reverse_k(list, k) do
+    list
+    |> Enum.chunk_every(k)
+    |> Enum.flat_map(fn chunk ->
+      if length(chunk) == k, do: Enum.reverse(chunk), else: chunk
+    end)
+  end
+end
+
+defmodule NativeCompareProofTest do
+  # Native (built-in list) versions agree with the ListNode versions on the
+  # same inputs — the comparison baseline for future struct-vs-native work.
+  # Same convention. ListNode shared where struct versions are referenced.
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Native: agreement with struct versions" do
+    # 5W1H | Who: reader. What: native digit-list addition matches the struct gold standard. When/Where: Add Two Numbers contract on plain LSB-first lists. How: equality asserts. Why: struct ceremony adds nothing to digit math.
+    # STAR | Situation: five digit pairs. Task: lock agreement. Action: add each on both. Result: identical outputs.
+    # FLOW | ([2,4,3],[5,6,4]): 2+5=7 → 4+6=10 → 0 carry 1 → 3+4+1=8 → [7,0,8] (same digits, no structs).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native add-two agrees with struct version" do
+      for {a, b} <- [{[2, 4, 3], [5, 6, 4]}, {[0], [0]}, {[9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 9]}, {[9], [1]}, {[1, 8], [0]}] do
+        expected = AddTwoNumbersRecursive.add_two_numbers(from_list(a), from_list(b)) |> to_list()
+        assert NatAddTwo.add(a, b) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: native take/drop removal matches struct two-pass. When/Where: Remove Nth contract on plain lists. How: equality asserts. Why: index math replaces pointer walking.
+    # STAR | Situation: six (list, n) inputs. Task: lock agreement. Action: remove each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native remove-nth agrees with struct version" do
+      for {l, n} <- [{[1, 2, 3, 4, 5], 2}, {[1], 1}, {[1, 2], 1}, {[1, 2, 3], 3}, {[1, 2, 3], 1}, {Enum.to_list(1..10), 7}] do
+        expected = RemTwoPass.remove_nth_from_end(from_list(l), n) |> to_list()
+        assert NatRemoveNth.remove_nth(l, n) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: native recursive merge matches struct merge. When/Where: Merge Two Sorted contract on plain sorted lists. How: equality asserts. Why: [h|t] already is the cons-cell the struct imitates.
+    # STAR | Situation: five list pairs. Task: lock agreement. Action: merge each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native merge-two agrees with struct version" do
+      for {a, b} <- [{[1, 2, 4], [1, 3, 4]}, {[], []}, {[], [0]}, {[1], [1, 2, 3, 4, 5]}, {[-3, -1], [-2, 0]}] do
+        expected = MergeRec.merge_two_lists(from_list(a), from_list(b)) |> to_list()
+        assert NatMergeTwo.merge(a, b) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: native divide-and-conquer matches struct version on multi-list inputs. When/Where: Merge k contract on plain lists. How: equality asserts. Why: chunk_every pairing works identically without structs.
+    # STAR | Situation: 3-list example, empties, singletons. Task: lock agreement. Action: merge_k each on both. Result: identical outputs.
+    # FLOW | [[1,4,5],[1,3,4],[2,6]] → chunk → merge pair → [[1,1,3,4,4,5],[2,6]] → merge → [1,1,2,3,4,4,5,6] (same rounds, plain lists).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native merge-k agrees with struct version" do
+      for lists <- [[[1, 4, 5], [1, 3, 4], [2, 6]], [[], []], [[], [0]], [[5], [1], [3], [2], [4]]] do
+        expected = MergeKDC.merge_k_lists(Enum.map(lists, &from_list/1)) |> to_list()
+        assert NatMergeK.merge_k(lists) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: native pair-swap matches struct recursion. When/Where: Swap Pairs contract on plain lists. How: equality asserts. Why: [b,a|swap(t)] is the swap with no ceremony.
+    # STAR | Situation: even, empty, single, odd, five inputs. Task: lock agreement. Action: swap each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native swap agrees with struct version" do
+      for l <- [[1, 2, 3, 4], [], [1], [1, 2, 3], [1, 2, 3, 4, 5]] do
+        expected = SwapRec.swap_pairs(from_list(l)) |> to_list()
+        assert NatSwap.swap(l) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: native chunk-reverse-leave matches struct group reversal. When/Where: k-Group contract on plain lists. How: equality asserts. Why: chunk_every + conditional reverse is the whole algorithm natively.
+    # STAR | Situation: k=2,3,1, full-length and leftover inputs. Task: lock agreement. Action: reverse_k each on both. Result: identical outputs.
+    # FLOW | ([1,2,3,4,5], k=2): chunk → [[1,2],[3,4],[5]] → reverse full chunks → [[2,1],[4,3],[5]] → flat → [2,1,4,3,5].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "native k-group agrees with struct version" do
+      for {l, k} <- [{[1, 2, 3, 4, 5], 2}, {[1, 2, 3, 4, 5], 3}, {[1, 2, 3, 4, 5], 1}, {[1, 2, 3], 3}, {[1, 2], 2}, {[1], 1}] do
+        expected = KGroupSol1.reverse_k_group(from_list(l), k) |> to_list()
+        assert NatKGroup.reverse_k(l, k) == expected
       end
     end
   end
