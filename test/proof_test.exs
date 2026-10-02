@@ -5299,3 +5299,194 @@ defmodule MergeProofTest do
     end
   end
 end
+
+# Generate Parentheses article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here so all three can
+# coexist. The iterative version is compiled from a verbatim source string
+# (see below): besides hanging, it emits unused-rebinding warnings.
+defmodule GenAcc do
+  @spec generate_parenthesis(n :: integer) :: [String.t()]
+  def generate_parenthesis(n) do
+    build(n, 0, 0, "", [])
+  end
+
+  defp build(n, n, n, current, acc) do
+    [current | acc]
+  end
+
+  defp build(n, open, close, current, acc) do
+    acc =
+      if open < n do
+        build(n, open + 1, close, current <> "(", acc)
+      else
+        acc
+      end
+
+    if close < open do
+      build(n, open, close + 1, current <> ")", acc)
+    else
+      acc
+    end
+  end
+end
+
+defmodule GenFlat do
+  @spec generate_parenthesis(n :: integer) :: [String.t()]
+  def generate_parenthesis(n) do
+    generate(n, 0, 0, "")
+  end
+
+  defp generate(n, n, n, current), do: [current]
+
+  defp generate(n, open, close, current) do
+    open_branch =
+      if open < n do
+        generate(n, open + 1, close, current <> "(")
+      else
+        []
+      end
+
+    close_branch =
+      if close < open do
+        generate(n, open, close + 1, current <> ")")
+      else
+        []
+      end
+
+    open_branch ++ close_branch
+  end
+end
+
+defmodule GenBrute do
+  @spec generate_parenthesis(n :: integer) :: [String.t()]
+  def generate_parenthesis(n) do
+    generate_all(n, n, "")
+    |> Enum.filter(&valid?/1)
+  end
+
+  defp generate_all(0, 0, current), do: [current]
+
+  defp generate_all(open, close, current) do
+    open_branch =
+      if open > 0, do: generate_all(open - 1, close, current <> "("), else: []
+
+    close_branch =
+      if close > 0, do: generate_all(open, close - 1, current <> ")"), else: []
+
+    open_branch ++ close_branch
+  end
+
+  defp valid?(str) do
+    str
+    |> String.graphemes()
+    |> Enum.reduce_while(0, fn
+      "(", balance -> {:cont, balance + 1}
+      ")", balance when balance > 0 -> {:cont, balance - 1}
+      ")", _balance -> {:halt, :invalid}
+    end)
+    |> case do
+      0 -> true
+      _ -> false
+    end
+  end
+end
+
+defmodule GenProofTest do
+  # Proof suite for the article "Solving LeetCode's Generate Parentheses in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Solution 2 (iterative DFS) VERBATIM (renamed module only): `initial_stack`
+  # is rebound inside the reduce_while fn, so every iteration re-reads the
+  # outer [{0,0,""}] and the infinite stream never exhausts. Kept as a string:
+  # compiling it also emits unused-rebinding warnings.
+  @verbatim_iter_src """
+  defmodule CkVerbatimGenIter do
+    def generate_parenthesis(n) do
+      initial_stack = [{0, 0, ""}]
+      Enum.reduce_while(Stream.iterate(0, &(&1 + 1)), [], fn _, acc ->
+        case initial_stack do
+          [] ->
+            {:halt, Enum.reverse(acc)}
+          [{open, close, current} | rest] ->
+            if open == n and close == n do
+              new_acc = [current | acc]
+              initial_stack = rest
+              {:cont, new_acc}
+            else
+              new_entries =
+                []
+                |> maybe_add(open < n, {open + 1, close, current <> "("})
+                |> maybe_add(close < open, {open, close + 1, current <> ")"})
+              initial_stack = new_entries ++ rest
+              {:cont, acc}
+            end
+        end
+      end)
+    end
+    defp maybe_add(list, true, entry), do: [entry | list]
+    defp maybe_add(list, false, _entry), do: list
+  end
+  """
+
+  describe "Parentheses generation: correct versions" do
+    # 5W1H | Who: reader. What: flat_map and brute force pass n=3 in the article's exact order plus n=1, n=0 and the Catalan count for n=4. When/Where: article examples + constraints. How: equality asserts. Why: baseline generation correctness.
+    # STAR | Situation: n=3,1,0 and count for n=4. Task: lock outputs. Action: generate_parenthesis each on both. Result: article order, ["()"], [""], 14.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "flat_map and brute force pass examples" do
+      expected_3 = ["((()))", "(()())", "(())()", "()(())", "()()()"]
+
+      assert GenFlat.generate_parenthesis(3) == expected_3
+      assert GenFlat.generate_parenthesis(1) == ["()"]
+      assert GenBrute.generate_parenthesis(3) == expected_3
+      assert GenBrute.generate_parenthesis(1) == ["()"]
+      assert GenBrute.generate_parenthesis(0) == [""]
+
+      assert length(GenFlat.generate_parenthesis(4)) == 14
+      assert length(GenBrute.generate_parenthesis(4)) == 14
+    end
+
+    # 5W1H | Who: reader. What: accumulator version generates the same SET as the others (Catalan counts hold) but its own order is reversed. When/Where: article Solution 1 order claim. How: set-equality + count asserts. Why: prepend-accumulator reverses discovery order.
+    # STAR | Situation: n=3,1,0,4. Task: prove set agreement. Action: compare as MapSets + counts. Result: equal sets; 5, 1, 1 items; 14 for n=4.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "accumulator version agrees as a set" do
+      for n <- [3, 1, 0] do
+        assert GenAcc.generate_parenthesis(n) |> MapSet.new() ==
+                 GenFlat.generate_parenthesis(n) |> MapSet.new()
+      end
+
+      assert length(GenAcc.generate_parenthesis(4)) == 14
+    end
+  end
+
+  describe "Parentheses generation: article errors (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: ARTICLE ERROR (order) — the accumulator version returns the REVERSED discovery order (prepended acc), so n=3 yields ["()()()",…,"((()))"], contradicting the claimed ["((()))",…]. When/Where: article Solution 1 output. How: exact-list assert. Why: prepend-accumulator reverses; LeetCode accepts any order, the article text doesn't.
+    # STAR | Situation: n=3 via accumulator. Task: prove actual order. Action: generate_parenthesis(3). Result: ["()()()","()(())","(())()","(()())","((()))"].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "accumulator order is reversed vs article" do
+      assert GenAcc.generate_parenthesis(3) == ["()()()", "()(())", "(())()", "(()())", "((()))"]
+
+      refute GenAcc.generate_parenthesis(3) == ["((()))", "(()())", "(())()", "()(())", "()()()"]
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the iterative version HANGS on every n: `initial_stack` rebound inside the fn never escapes, so each iteration re-reads the outer [{0,0,""}] and the infinite stream never exhausts (the compiler itself warns "unused variable"). When/Where: article Solution 2 (same rebinding trap as Manacher). How: runtime-compile verbatim source (stderr captured), Task.yield timeout proves non-termination, then kill. Why: rebinding-vs-threading through Enum acc.
+    # STAR | Situation: verbatim iterative version with n=2. Task: prove it never returns. Action: Task.async + yield 3s. Result: nil (still running) on both runs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim iterative version hangs" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_iter_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      for _ <- [1, 2] do
+        task = Task.async(fn -> apply(mod, :generate_parenthesis, [2]) end)
+        assert Task.yield(task, 3000) == nil
+        Task.shutdown(task, :brutal_kill)
+      end
+    end
+  end
+end
