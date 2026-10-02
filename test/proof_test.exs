@@ -4003,3 +4003,160 @@ defmodule HallucinationGuardTest do
     end
   end
 end
+
+# Letter Combinations article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all three
+# can coexist in one file.
+defmodule PhoneIter do
+  @keypad %{
+    "2" => ["a", "b", "c"],
+    "3" => ["d", "e", "f"],
+    "4" => ["g", "h", "i"],
+    "5" => ["j", "k", "l"],
+    "6" => ["m", "n", "o"],
+    "7" => ["p", "q", "r", "s"],
+    "8" => ["t", "u", "v"],
+    "9" => ["w", "x", "y", "z"]
+  }
+
+  @spec letter_combinations(digits :: String.t()) :: [String.t()]
+  def letter_combinations(""), do: []
+
+  def letter_combinations(digits) do
+    digits
+    |> String.graphemes()
+    |> Enum.reduce([""], fn digit, acc ->
+      letters = Map.get(@keypad, digit)
+
+      for combo <- acc, letter <- letters do
+        combo <> letter
+      end
+    end)
+  end
+end
+
+defmodule PhoneRec do
+  @keypad %{
+    "2" => ["a", "b", "c"],
+    "3" => ["d", "e", "f"],
+    "4" => ["g", "h", "i"],
+    "5" => ["j", "k", "l"],
+    "6" => ["m", "n", "o"],
+    "7" => ["p", "q", "r", "s"],
+    "8" => ["t", "u", "v"],
+    "9" => ["w", "x", "y", "z"]
+  }
+
+  @spec letter_combinations(digits :: String.t()) :: [String.t()]
+  def letter_combinations(""), do: []
+
+  def letter_combinations(digits) do
+    digits
+    |> String.graphemes()
+    |> build_combinations("")
+  end
+
+  defp build_combinations([], current), do: [current]
+
+  defp build_combinations([digit | rest], current) do
+    @keypad
+    |> Map.get(digit)
+    |> Enum.flat_map(fn letter ->
+      build_combinations(rest, current <> letter)
+    end)
+  end
+end
+
+defmodule PhoneComp do
+  @keypad %{
+    "2" => ["a", "b", "c"],
+    "3" => ["d", "e", "f"],
+    "4" => ["g", "h", "i"],
+    "5" => ["j", "k", "l"],
+    "6" => ["m", "n", "o"],
+    "7" => ["p", "q", "r", "s"],
+    "8" => ["t", "u", "v"],
+    "9" => ["w", "x", "y", "z"]
+  }
+
+  @spec letter_combinations(digits :: String.t()) :: [String.t()]
+  def letter_combinations(""), do: []
+
+  def letter_combinations(digits) do
+    do_combine(String.graphemes(digits))
+  end
+
+  defp do_combine([]), do: [""]
+
+  defp do_combine([digit | rest]) do
+    for letter <- Map.get(@keypad, digit),
+        tail <- do_combine(rest) do
+      letter <> tail
+    end
+  end
+end
+
+defmodule PhoneProofTest do
+  # Proof suite for the article "Solving LeetCode's Letter Combinations of a
+  # Phone Number in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Phone: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples in identical order (order is deterministic though the problem allows any). When/Where: article examples 1-3. How: equality asserts per version. Why: baseline cartesian correctness.
+    # STAR | Situation: "23", "", "2". Task: lock outputs. Action: letter_combinations each on all three. Result: 9 combos, [], ["a","b","c"] everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the three examples" do
+      expected_23 = ["ad", "ae", "af", "bd", "be", "bf", "cd", "ce", "cf"]
+
+      assert PhoneIter.letter_combinations("23") == expected_23
+      assert PhoneRec.letter_combinations("23") == expected_23
+      assert PhoneComp.letter_combinations("23") == expected_23
+
+      assert PhoneIter.letter_combinations("") == []
+      assert PhoneRec.letter_combinations("") == []
+      assert PhoneComp.letter_combinations("") == []
+
+      assert PhoneIter.letter_combinations("2") == ["a", "b", "c"]
+      assert PhoneRec.letter_combinations("2") == ["a", "b", "c"]
+      assert PhoneComp.letter_combinations("2") == ["a", "b", "c"]
+    end
+
+    # 5W1H | Who: reader. What: all three agree exactly (order included) on repeats, 4-letter digits and longer inputs. When/Where: beyond-article robustness. How: equality asserts + count/ends spot checks on "234". Why: proves same traversal, not just same examples.
+    # STAR | Situation: "22", "79", "234", "29". Task: lock agreement. Action: letter_combinations each on all three. Result: identical lists; "234" has 27 combos from "adg" to "cfi".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on extended battery" do
+      for s <- ["22", "79", "29", "7777"] do
+        assert PhoneRec.letter_combinations(s) == PhoneIter.letter_combinations(s)
+        assert PhoneComp.letter_combinations(s) == PhoneIter.letter_combinations(s)
+      end
+
+      combos_234 = PhoneIter.letter_combinations("234")
+      assert length(combos_234) == 27
+      assert hd(combos_234) == "adg"
+      assert List.last(combos_234) == "cfi"
+      assert PhoneRec.letter_combinations("234") == combos_234
+      assert PhoneComp.letter_combinations("234") == combos_234
+    end
+  end
+
+  describe "Phone: invalid digits (edge documented)" do
+    # 5W1H | Who: prover. What: digits outside 2-9 (and non-digits) crash ALL versions identically: Map.get returns nil, which is not enumerable. When/Where: outside article constraints (digits are 2-9). How: assert_raise per version. Why: keypad-miss contract is a crash, not [].
+    # STAR | Situation: "1", "12", "*", "2a3". Task: prove the crash. Action: letter_combinations each on all three. Result: Protocol.UndefinedError everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "unmapped digits raise on all versions" do
+      for s <- ["1", "12", "*", "2a3"] do
+        assert_raise Protocol.UndefinedError, fn ->
+          PhoneIter.letter_combinations(s)
+        end
+
+        assert_raise Protocol.UndefinedError, fn ->
+          PhoneRec.letter_combinations(s)
+        end
+
+        assert_raise Protocol.UndefinedError, fn ->
+          PhoneComp.letter_combinations(s)
+        end
+      end
+    end
+  end
+end
