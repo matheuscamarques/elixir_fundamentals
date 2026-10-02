@@ -6041,3 +6041,131 @@ defmodule NativeCompareProofTest do
     end
   end
 end
+
+# Remove Duplicates from Sorted Array article code, inlined here (this repo
+# never uses /lib). NOTE: the article names versions `Solution`; renamed here.
+# DedupTupleFixed is a FIX by the prover: comparing elem[fast] against
+# elem[slow] only works with in-place compaction (slow slot holds the last
+# unique); without mutation you must thread the last unique VALUE instead.
+defmodule DedupUniq do
+  @spec remove_duplicates(nums :: [integer]) :: integer
+  def remove_duplicates(nums) do
+    nums
+    |> Enum.uniq()
+    |> length()
+  end
+end
+
+defmodule DedupRec do
+  @spec remove_duplicates(nums :: [integer]) :: integer
+  def remove_duplicates(nums) do
+    nums
+    |> deduplicate(nil)
+    |> length()
+  end
+
+  defp deduplicate([], _last), do: []
+  defp deduplicate([head | tail], last) when head != last, do: [head | deduplicate(tail, head)]
+  defp deduplicate([_head | tail], last), do: deduplicate(tail, last)
+end
+
+defmodule DedupTupleBroken do
+  def remove_duplicates(nums) do
+    n = length(nums)
+    tuple = List.to_tuple(nums)
+    {_, slow} = do_remove(tuple, n, 1, 0)
+    slow + 1
+  end
+
+  defp do_remove(_tuple, n, fast, slow) when fast >= n, do: {nil, slow}
+
+  defp do_remove(tuple, n, fast, slow) do
+    fast_val = elem(tuple, fast)
+    slow_val = elem(tuple, slow)
+
+    if fast_val != slow_val do
+      do_remove(tuple, n, fast + 1, slow + 1)
+    else
+      do_remove(tuple, n, fast + 1, slow)
+    end
+  end
+end
+
+defmodule DedupTupleFixed do
+  def remove_duplicates([]), do: 0
+
+  def remove_duplicates(nums) do
+    tuple = List.to_tuple(nums)
+    do_remove(tuple, length(nums), 1, 1, elem(tuple, 0))
+  end
+
+  defp do_remove(_tuple, n, fast, slow, _last) when fast >= n, do: slow
+
+  defp do_remove(tuple, n, fast, slow, last) do
+    val = elem(tuple, fast)
+
+    if val != last do
+      do_remove(tuple, n, fast + 1, slow + 1, val)
+    else
+      do_remove(tuple, n, fast + 1, slow, last)
+    end
+  end
+end
+
+defmodule DedupProofTest do
+  # Proof suite for the article "Solving LeetCode's Remove Duplicates from
+  # Sorted Array in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @battery [
+    {[1, 1, 2], 2},
+    {[0, 0, 1, 1, 1, 2, 2, 3, 3, 4], 5},
+    {[], 0},
+    {[5], 1},
+    {[1, 1, 1], 1},
+    {[1, 2, 3], 3},
+    {[0, 0, 0, 0, 0], 1}
+  ]
+
+  describe "Dedup: correct versions" do
+    # 5W1H | Who: reader. What: Enum.uniq and recursive versions agree on examples, empties, singletons and all-dup inputs. When/Where: article Solutions 1-2. How: equality asserts. Why: baseline dedup correctness.
+    # STAR | Situation: seven inputs. Task: lock outputs. Action: remove_duplicates each on both. Result: 2, 5, 0, 1, 1, 3, 1 everywhere.
+    # FLOW | ([1,1,2]): keep 1 (last=nil), skip second 1 (last=1), keep 2 → [1,2] → length 2.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "uniq and recursive agree on battery" do
+      for {nums, expected} <- @battery do
+        assert DedupUniq.remove_duplicates(nums) == expected
+        assert DedupRec.remove_duplicates(nums) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: FIXED tuple version (last-unique value threaded) matches recursive on every case above. When/Where: prover fix for the index-comparison bug. How: equality asserts. Why: proves the fix restores counting.
+    # STAR | Situation: same seven inputs. Task: lock agreement. Action: remove_duplicates each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed tuple version agrees" do
+      for {nums, expected} <- @battery do
+        assert DedupTupleFixed.remove_duplicates(nums) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: on sorted inputs Enum.dedup/1 (adjacent-only) coincides with Enum.uniq/1, as the pitfalls note claims. When/Where: article pitfalls on dedup vs uniq. How: equality asserts. Why: validates the prose claim.
+    # STAR | Situation: sorted battery inputs. Task: prove coincidence. Action: compare both per input. Result: equal everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "dedup coincides with uniq on sorted inputs" do
+      for {nums, _} <- @battery do
+        assert Enum.dedup(nums) == Enum.uniq(nums)
+      end
+    end
+  end
+
+  describe "Dedup: index-comparison bug (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the tuple version compares elem[fast] against elem[slow], but without in-place compaction elem[slow] is NOT the last unique value: the ex2 count inflates to 8, and [] yields 1 (slow+1 of nothing). When/Where: article Solution 3. How: exact-value asserts. Why: index comparison needs mutation to mean anything.
+    # STAR | Situation: ex2 list and []. Task: prove wrong outputs. Action: remove_duplicates each. Result: 8 (not 5), 1 (not 0).
+    # FLOW | ex2: at fast=3, elem[3]=1 vs elem[slow=1]=0 → counted as new, but 1 was already counted → slow drifts to 7 → 8.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "tuple version miscounts" do
+      assert DedupTupleBroken.remove_duplicates([0, 0, 1, 1, 1, 2, 2, 3, 3, 4]) == 8
+      assert DedupTupleBroken.remove_duplicates([]) == 1
+    end
+  end
+end
