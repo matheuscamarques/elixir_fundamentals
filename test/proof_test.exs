@@ -4165,6 +4165,8 @@ end
 # NOTE: the article names every version `Solution`; renamed here so all four
 # can coexist in one file.
 defmodule FourBrute do
+  # FIX by the prover: no quadruplet fits in fewer than 4 elements.
+  def four_sum(nums, _target) when length(nums) < 4, do: []
   @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
   def four_sum(nums, target) do
     n = length(nums)
@@ -4309,6 +4311,8 @@ defmodule FourRec do
 end
 
 defmodule FourRw do
+  # FIX by the prover: no quadruplet fits in fewer than 4 elements.
+  def four_sum(nums, _target) when length(nums) < 4, do: []
   @spec four_sum(nums :: [integer], target :: integer) :: [[integer]]
   def four_sum(nums, target) do
     sorted = Enum.sort(nums)
@@ -4431,29 +4435,15 @@ defmodule FourSumProofTest do
   end
 
   describe "4Sum: short inputs (edge documented)" do
-    # 5W1H | Who: prover. What: inputs shorter than 4 elements are IN the constraints (n >= 1): brute force and reduce_while crash (decreasing ranges + out-of-range elem → ArgumentError, warnings captured), while hash and recursive return [] gracefully. When/Where: article never covers n < 4. How: assert_raise with stderr captured + equality asserts. Why: range/edge contract per implementation.
-    # STAR | Situation: [], [5], [1,2], [1,2,3]. Task: prove each behavior. Action: four_sum each on all four. Result: ArgumentError, ArgumentError, [], [].
+    # 5W1H | Who: prover. What: FIXED — inputs shorter than 4 elements now return [] on all four (n<4 guard clauses); previously brute/reduce_while crashed with ArgumentError (decreasing ranges + out-of-range elem). When/Where: article never covers n < 4 (yet constraints allow n >= 1). How: equality asserts. Why: no quadruplet fits, so [] is the only sane answer.
+    # STAR | Situation: [], [5], [1,2], [1,2,3]. Task: prove [] everywhere. Action: four_sum each on all four. Result: [], [], [], [].
+    # FLOW | four_sum([1,2], 3): length 2 < 4 → guard clause fires before any range is built
+    #          ▼ []
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
-    test "short inputs diverge per implementation" do
+    test "short inputs return empty on all versions (fixed)" do
       for {nums, target} <- [{[], 0}, {[5], 5}, {[1, 2], 3}, {[1, 2, 3], 6}] do
-        for mod <- [FourBrute, FourRw] do
-          err =
-            ExUnit.CaptureIO.capture_io(:stderr, fn ->
-              send(self(), {:err, try do
-                apply(mod, :four_sum, [nums, target])
-              rescue
-                e -> e
-              end})
-            end)
-            |> then(fn _ ->
-              receive do
-                {:err, e} -> e
-              end
-            end)
-
-          assert %ArgumentError{} = err
-        end
-
+        assert FourBrute.four_sum(nums, target) == []
+        assert FourRw.four_sum(nums, target) == []
         assert FourHash.four_sum(nums, target) == []
         assert FourRec.four_sum(nums, target) == []
       end
@@ -4918,6 +4908,250 @@ defmodule ParenProofTest do
       end
 
       assert ParenCancelVerbatim.is_valid("([])") == true
+    end
+  end
+end
+
+# Prover-written FIXES for broken article solutions (standing rule: broken
+# code gets a working adaptation, originals stay documented above).
+# Manacher: threads p through the acc AND fixes the start/length mapping
+# (length ml-1, start div(mc-ml+1, 2) — the article's formula overshoots by one).
+defmodule PalManacherFixed do
+  @spec longest_palindrome(s :: String.t()) :: String.t()
+  def longest_palindrome(s) do
+    t = "#" <> Enum.join(String.graphemes(s), "#") <> "#"
+    chars = String.graphemes(t) |> List.to_tuple()
+    n = tuple_size(chars)
+    p = :array.new(n, default: 0)
+
+    {_, _, p} =
+      Enum.reduce(0..(n - 1), {0, 0, p}, fn i, {c, r, p} ->
+        mirror = 2 * c - i
+        initial = if i < r, do: min(r - i, :array.get(mirror, p)), else: 0
+        final = expand(chars, i - initial, i + initial, n, initial)
+        p = :array.set(i, final, p)
+        if i + final > r, do: {i, i + final, p}, else: {c, r, p}
+      end)
+
+    {ml, mc} =
+      Enum.reduce(0..(n - 1), {0, 0}, fn i, {m1, mcc} ->
+        radius = :array.get(i, p)
+        if radius > m1, do: {radius, i}, else: {m1, mcc}
+      end)
+
+    s |> String.slice(div(mc - ml + 1, 2), ml - 1)
+  end
+
+  defp expand(chars, left, right, n, radius) do
+    if left >= 0 and right < n and elem(chars, left) == elem(chars, right) do
+      expand(chars, left - 1, right + 1, n, radius + 1)
+    else
+      radius
+    end
+  end
+end
+
+defmodule AddTwoNumbersConvertFixed do
+  def add_two_numbers(l1, l2) do
+    integer_to_list(list_to_integer(l1, 0, 1) + list_to_integer(l2, 0, 1))
+  end
+
+  defp list_to_integer(nil, acc, _multiplier), do: acc
+
+  defp list_to_integer(%ListNode{val: val, next: next}, acc, multiplier) do
+    list_to_integer(next, acc + val * multiplier, multiplier * 10)
+  end
+
+  defp integer_to_list(0), do: %ListNode{val: 0}
+  defp integer_to_list(num), do: num |> build_list(nil) |> reverse_list(nil)
+
+  defp build_list(0, acc), do: acc
+
+  defp build_list(num, acc) do
+    build_list(div(num, 10), %ListNode{val: rem(num, 10), next: acc})
+  end
+
+  defp reverse_list(nil, acc), do: acc
+  defp reverse_list(%ListNode{val: v, next: n}, acc), do: reverse_list(n, %ListNode{val: v, next: acc})
+end
+
+defmodule AddTwoNumbersAccFixed do
+  def add_two_numbers(l1, l2) do
+    add_lists(l1, l2, 0, nil)
+  end
+
+  defp add_lists(nil, nil, 0, acc), do: reverse_list(acc, nil)
+  defp add_lists(nil, nil, carry, acc), do: reverse_list(%ListNode{val: carry, next: acc}, nil)
+
+  defp add_lists(nil, %ListNode{val: val, next: next}, carry, acc) do
+    sum = val + carry
+    add_lists(nil, next, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+
+  defp add_lists(%ListNode{val: val, next: next}, nil, carry, acc) do
+    sum = val + carry
+    add_lists(next, nil, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+
+  defp add_lists(%ListNode{val: v1, next: n1}, %ListNode{val: v2, next: n2}, carry, acc) do
+    sum = v1 + v2 + carry
+    add_lists(n1, n2, div(sum, 10), %ListNode{val: rem(sum, 10), next: acc})
+  end
+
+  defp reverse_list(nil, acc), do: acc
+  defp reverse_list(%ListNode{val: v, next: n}, acc), do: reverse_list(n, %ListNode{val: v, next: acc})
+end
+
+defmodule AddTwoNumbersListsFixed do
+  # FIX: pad the SHORTER (LSB-first) input with trailing zeros so head-to-head
+  # pairing stays LSB-aligned; the final reverse (kept verbatim) then yields
+  # the correct reversed form.
+  def add_two_numbers(l1, l2) do
+    len = max(length(l1), length(l2))
+    p1 = l1 ++ List.duplicate(0, len - length(l1))
+    p2 = l2 ++ List.duplicate(0, len - length(l2))
+    do_add(p1, p2, 0, [])
+  end
+
+  defp do_add([], [], 0, acc), do: Enum.reverse(acc)
+  defp do_add([], [], carry, acc), do: Enum.reverse([carry | acc])
+
+  defp do_add([], [h | t], carry, acc) do
+    sum = h + carry
+    do_add([], t, div(sum, 10), [rem(sum, 10) | acc])
+  end
+
+  defp do_add([h | t], [], carry, acc) do
+    sum = h + carry
+    do_add(t, [], div(sum, 10), [rem(sum, 10) | acc])
+  end
+
+  defp do_add([h1 | t1], [h2 | t2], carry, acc) do
+    sum = h1 + h2 + carry
+    do_add(t1, t2, div(sum, 10), [rem(sum, 10) | acc])
+  end
+end
+
+defmodule ZigzagMathFixed do
+  # FIX: real cycle math instead of the comment-only unfold step.
+  # Row 0 / last row step by `cycle`; middle rows alternate
+  # (cycle - 2*row) and (2*row).
+  def convert(s, 1), do: s
+
+  def convert(s, num_rows) do
+    chars = String.graphemes(s)
+    n = length(chars)
+    cycle = 2 * num_rows - 2
+
+    0..(num_rows - 1)
+    |> Enum.map(fn row ->
+      chars |> row_positions(n, row, cycle, num_rows) |> Enum.map(&Enum.at(chars, &1)) |> Enum.join()
+    end)
+    |> Enum.join()
+  end
+
+  defp row_positions(_chars, n, row, cycle, nr) when row == 0 or row == nr - 1 do
+    Stream.iterate(row, &(&1 + cycle)) |> Enum.take_while(&(&1 < n))
+  end
+
+  defp row_positions(_chars, n, row, cycle, _nr) do
+    Stream.unfold({row, true}, fn
+      {pos, _} when pos >= n -> nil
+      {pos, true} -> {pos, {pos + cycle - 2 * row, false}}
+      {pos, false} -> {pos, {pos + 2 * row, true}}
+    end)
+    |> Enum.to_list()
+  end
+end
+
+defmodule TwoSumPatternFixed do
+  # FIX: totality clause — with no solution there is nothing to return.
+  def two_sum(nums, target) do
+    helper(Enum.with_index(nums), %{}, target)
+  end
+
+  defp helper([], _, _), do: []
+  defp helper([{value, index} | _t], map, _target) when is_map_key(map, value), do: [map[value], index]
+  defp helper([{value, index} | t], map, target), do: helper(t, Map.put(map, target - value, index), target)
+end
+
+defmodule PalTwoPtrFixed do
+  # FIX: explicit step (//1) so single-element inputs enumerate nothing
+  # instead of a decreasing range.
+  def is_palindrome(x) do
+    chars = x |> Integer.to_string() |> String.graphemes()
+    n = length(chars)
+
+    0..(div(n, 2) - 1)//1
+    |> Enum.all?(fn i -> Enum.at(chars, i) == Enum.at(chars, n - 1 - i) end)
+  end
+end
+
+defmodule FixesProofTest do
+  # Agreement proofs for every prover-written fix above. Same convention.
+  # ListNode is shared with the Add Two Numbers section (same struct).
+  use ExUnit.Case, async: true
+
+  defp from_list([]), do: nil
+  defp from_list([h | t]), do: %ListNode{val: h, next: from_list(t)}
+
+  defp to_list(nil), do: []
+  defp to_list(%ListNode{val: v, next: n}), do: [v | to_list(n)]
+
+  describe "Fixes: proper Manacher" do
+    # 5W1H | Who: reader. What: proper Manacher (threaded array + corrected start/length mapping) matches brute force everywhere incl. empty. When/Where: prover fix for the verbatim ""-always version. How: equality asserts. Why: proves linear-time idea works once state is threaded.
+    # STAR | Situation: 13 inputs incl. "". Task: lock agreement. Action: longest_palindrome each on both. Result: identical outputs.
+    # FLOW | "babad" → threaded radii find center t[3]='a' radius 4 → start div(3-4+1,2)=0, len 4-1=3 → "bab" (the article's formula gave len 4 → "baba").
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "proper Manacher matches brute force" do
+      for s <- ["babad", "cbbd", "a", "ac", "racecar", "abba", "aaaa", "bananas", "abcba", "abccba", "aabbaa", "abcde"] do
+        assert PalManacherFixed.longest_palindrome(s) == PalinBrute.longest_palindrome(s)
+      end
+
+      assert PalManacherFixed.longest_palindrome("") == ""
+    end
+  end
+
+  describe "Fixes: Add Two Numbers order" do
+    # 5W1H | Who: reader. What: all three fixed versions agree with the recursive gold standard on examples, zero, carries and uneven lengths. When/Where: prover fixes for conversion/accumulator/plain-list bugs. How: equality asserts. Why: proves each fix restores reversed order.
+    # STAR | Situation: five inputs incl. [1,8]+[0]. Task: lock agreement. Action: add_two_numbers each on all four. Result: identical correct lists.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed versions match recursive gold standard" do
+      for {a, b} <- [ {[2, 4, 3], [5, 6, 4]}, {[0], [0]}, {[9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 9]}, {[9], [1]}, {[1, 8], [0]} ] do
+        expected = AddTwoNumbersRecursive.add_two_numbers(from_list(a), from_list(b)) |> to_list()
+        assert AddTwoNumbersConvertFixed.add_two_numbers(from_list(a), from_list(b)) |> to_list() == expected
+        assert AddTwoNumbersAccFixed.add_two_numbers(from_list(a), from_list(b)) |> to_list() == expected
+        assert AddTwoNumbersListsFixed.add_two_numbers(a, b) == expected
+      end
+    end
+  end
+
+  describe "Fixes: real zigzag math" do
+    # 5W1H | Who: reader. What: implemented cycle math agrees with the map simulation on examples and edges. When/Where: prover fix for the comment-only stub. How: equality asserts. Why: proves the math approach works once positions are computed.
+    # STAR | Situation: seven inputs. Task: lock agreement. Action: convert each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "cycle math matches map simulation" do
+      for {s, r} <- [{"PAYPALISHIRING", 3}, {"PAYPALISHIRING", 4}, {"A", 1}, {"AB", 5}, {"HELLO", 1}, {"a,b.c", 2}, {"PAYPALISHIRING", 2}] do
+        assert ZigzagMathFixed.convert(s, r) == ZigzagMap.convert(s, r)
+      end
+    end
+  end
+
+  describe "Fixes: totality and single-element edges" do
+    # 5W1H | Who: reader. What: pattern fix keeps example behavior and returns [] with no solution; two-pointer fix keeps multi-digit behavior and returns true for 0-9. When/Where: prover one-line fixes (helper [] clause; explicit //1 step). How: equality asserts. Why: total functions, no special cases.
+    # STAR | Situation: [2,7,11,15]/9, [1,2,3]/100, digits 0-9, 121/1221/10. Task: lock fixed behavior. Action: call fixed versions. Result: [0,1], [], all true, true/true/false.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "pattern totality and two-pointer single digits" do
+      assert TwoSumPatternFixed.two_sum([2, 7, 11, 15], 9) == [0, 1]
+      assert TwoSumPatternFixed.two_sum([1, 2, 3], 100) == []
+
+      for x <- Enum.to_list(0..9) do
+        assert PalTwoPtrFixed.is_palindrome(x) == true
+      end
+
+      assert PalTwoPtrFixed.is_palindrome(121) == true
+      assert PalTwoPtrFixed.is_palindrome(1221) == true
+      assert PalTwoPtrFixed.is_palindrome(10) == false
     end
   end
 end
