@@ -37,12 +37,17 @@ fix it, repeat until it is muscle memory.
 
 ```bash
 mix test
-# Result: 64 passed, zero warnings
+# Result: 157 passed, zero warnings
 ```
 
-- Proof suite: [`test/proof_test.exs`](test/proof_test.exs) — the SINGLE
-  `.exs` tuning file: every exercise plus a regression test per documented
-  error, article modules inlined (this repo never uses `/lib`).
+- Proof suite: [`test/proof_test.exs`](test/proof_test.exs) — the full
+  tuning file: every exercise plus a regression test per documented
+  error, article modules inlined (this repo never uses `/lib`). Each test
+  carries 5W1H + STAR comments plus a FLOW block showing real values
+  at every transformation step.
+- Corrections split: [`test/corrections_test.exs`](test/corrections_test.exs)
+  — frozen snapshot of every mistake row (claims articles got wrong +
+  proofs), self-contained for tuning. Source of truth stays in `proof_test.exs`.
 - Each documented error is marked `[v1-fix]` in its test comment and grouped
   in the hall of shame below.
 
@@ -67,7 +72,8 @@ then read the corresponding test comment. Do not guess — reproduce.
 ## Repo layout
 
 ```text
-test/proof_test.exs           # THE tuning file: all proofs, warning-clean
+test/proof_test.exs           # full proofs: 5W1H + STAR + FLOW, warning-clean
+test/corrections_test.exs     # frozen mistake-rows split for tuning
 lib/elixir_fundamentals.ex    # unused placeholder (repo keeps code in test files)
 ```
 
@@ -156,6 +162,32 @@ assert comma_words == ["a,", "the,", "of"]
 
 Private-function checks use `apply/3` instead of a direct call
 (`apply(NProof, :b, [5])`) to avoid the private-call warning.
+
+**4. FLOW blocks show real values, not types.**
+Above any test whose action is a pipeline of ≥3 stages, and inside any
+module function composing more than two `|>` steps, add the value at every
+arrow (verified by running, never hand-waved). Loops/recursion get a trace
+table instead of arrows:
+
+```elixir
+# FLOW | "  THE CAT CLIMBED!  "
+#          │ String.trim()
+#          ▼ "THE CAT CLIMBED!"
+#          │ String.downcase()
+#          ▼ "the cat climbed!"
+#          ...
+#          ▼ ["cat", "climbed"]
+```
+
+Rules: one arrow = one transformation; use the real function names;
+terminate on the asserted value; for documented errors annotate the wrong
+step (`▼ [8, 0, 7]  ← article claims [7, 0, 8]`). Skip FLOW on one-liners.
+
+**5. Corrections split stays frozen.**
+`test/corrections_test.exs` holds copies of every mistake row (errors, gaps,
+divergences, warts) with self-contained `Ck*` modules. When you fix or add
+a mistake row in `test/proof_test.exs`, mirror it there. Source of truth for
+behavior is always `proof_test.exs`; the split is a tuning convenience.
 
 ### Prompts to reuse
 

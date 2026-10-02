@@ -647,6 +647,17 @@ defmodule ArticleProofTest do
   describe "final challenges D1-D5" do
     # 5W1H | Who: trainee. What: D1 full tokenize pipeline (trim→downcase→depunctuate→split→reject stopwords). When/Where: final challenge, the real tokenizer. How: pipeline assert. Why: integrates every section.
     # STAR | Situation: noisy "  THE CAT CLIMBED!  ". Task: produce ["cat","climbed"]. Action: run the five-stage pipe. Result: ["cat","climbed"].
+    # FLOW | "  THE CAT CLIMBED!  "
+    #          │ String.trim()
+    #          ▼ "THE CAT CLIMBED!"
+    #          │ String.downcase()
+    #          ▼ "the cat climbed!"
+    #          │ String.replace(~r/[^\p{L}\p{N}\s]/u, " ")
+    #          ▼ "the cat climbed "
+    #          │ String.split(~r/\s+/, trim: true)
+    #          ▼ ["the", "cat", "climbed"]
+    #          │ Enum.reject(stopwords)
+    #          ▼ ["cat", "climbed"]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "D1 tokenize pipeline" do
       result =
@@ -662,6 +673,9 @@ defmodule ArticleProofTest do
 
     # 5W1H | Who: trainee. What: D2 term frequencies via Map.update counter. When/Where: final challenge, TF building block. How: reduce assert. Why: counting pattern reused in indexing.
     # STAR | Situation: [cat dog cat fish cat]. Task: count each. Action: reduce with Map.update. Result: %{"cat"=>3,"dog"=>1,"fish"=>1}.
+    # FLOW | ~w(cat dog cat fish cat)
+    #          │ Enum.reduce(%{}, Map.update(acc, w, 1, &(&1 + 1)))
+    #          ▼ %{"cat" => 3, "dog" => 1, "fish" => 1}
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "D2 word count" do
       result =
@@ -673,6 +687,11 @@ defmodule ArticleProofTest do
 
     # 5W1H | Who: trainee. What: D3 postings — uniq, group_by word, sort doc ids. When/Where: final challenge, inverted-index core shape. How: chained asserts in one pipeline. Why: exact postings construction.
     # STAR | Situation: [{word,doc}] pairs with a duplicate. Task: build %{word=>[sorted ids]}. Action: uniq→group_by→Map.new+sort. Result: %{"cat"=>[1,2],"fish"=>[3]}.
+    # FLOW | [{"cat",1},{"cat",2},{"fish",3},{"cat",1}]
+    #          │ Enum.uniq()
+    #          ▼ [{"cat",1},{"cat",2},{"fish",3}]
+    #          │ Enum.group_by(word) → Map.new(sort ids)
+    #          ▼ %{"cat" => [1, 2], "fish" => [3]}
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "D3 group word -> sorted doc_ids" do
       result =
@@ -686,6 +705,11 @@ defmodule ArticleProofTest do
 
     # 5W1H | Who: prover + future AI reader. What: D4 v1 answer is BROKEN (flat_map returning tuples); Enum.map fix works. When/Where: final challenge D4. How: assert_raise then fixed-pipeline assert. Why: the flat_map-vs-map trap in the wild.
     # STAR | Situation: v1 flat_map+tuple code. Task: prove it raises, prove the fix. Action: run broken (raises), run Enum.map version. Result: Protocol.UndefinedError, then %{1=>1,2=>1}.
+    # FLOW | %{1 => "a b c", 2 => "a b"}   (fixed Enum.map version)
+    #          │ per doc: String.split → Enum.count(&(&1 == "a"))
+    #          ▼ [{1, 1}, {2, 1}]
+    #          │ Map.new()
+    #          ▼ %{1 => 1, 2 => 1}
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "D4 article version is BROKEN (documents error); fixed version works" do
       # Article code raises because flat_map fun returns a tuple (not enumerable):
@@ -708,6 +732,11 @@ defmodule ArticleProofTest do
 
     # 5W1H | Who: trainee. What: D5 multi-list intersection via Enum.reduce and --/-- identity. When/Where: final challenge, AND-query semantics. How: asserts incl. empty and single-list edges. Why: reduce-powered set intersection.
     # STAR | Situation: three posting lists. Task: keep commons via reduce. Action: call intersection/1 thrice. Result: [2,3], [], [1,2].
+    # FLOW | intersection([[1,2,3],[2,3,4],[2,3,5]]) = Enum.reduce(t, h, &(&2 -- (&2 -- &1)))
+    #          │ acc [1,2,3] vs [2,3,4]: [1,2,3] -- ([1,2,3] -- [2,3,4]) = [1,2,3] -- [1]
+    #          ▼ [2, 3]
+    #          │ acc [2,3] vs [2,3,5]: [2,3] -- ([2,3] -- [2,3,5]) = [2,3] -- []
+    #          ▼ [2, 3]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "D5 intersection via reduce" do
       defmodule InterProof do
@@ -798,6 +827,11 @@ end
 # Tokenizer (article Step 1, verbatim).
 defmodule Tokenizer do
   def tokenize(text) do
+    # FLOW | "AÇÃO 123!"
+    #          │ String.downcase()
+    #          ▼ "ação 123!"
+    #          │ String.split(~r/[^\p{L}\p{N}]+/u, trim: true)
+    #          ▼ ["ação", "123"]
     text
     |> String.downcase()
     |> String.split(~r/[^\p{L}\p{N}]+/u, trim: true)
@@ -812,6 +846,13 @@ defmodule InvertedIndex do
   alias Tokenizer
 
   def build(documents) do
+    # FLOW | %{"doc1" => "cat cat dog"}
+    #          │ tokenize → Enum.uniq → Enum.map ({term, doc_id})
+    #          ▼ [{"cat", "doc1"}, {"dog", "doc1"}]
+    #          │ Enum.group_by (key: term, value: doc_id)
+    #          ▼ %{"cat" => ["doc1"], "dog" => ["doc1"]}
+    #          │ Map.new + Enum.uniq(docs)
+    #          ▼ %{"cat" => ["doc1"], "dog" => ["doc1"]}
     documents
     |> Enum.flat_map(fn {doc_id, text} ->
       text
@@ -824,6 +865,13 @@ defmodule InvertedIndex do
   end
 
   def build_with_tf(documents) do
+    # FLOW | %{"doc1" => "cat cat dog"}
+    #          │ tokenize → Enum.frequencies
+    #          ▼ %{"cat" => 2, "dog" => 1}
+    #          │ Enum.map ({term, {doc_id, count}})
+    #          ▼ [{"cat", {"doc1", 2}}, {"dog", {"doc1", 1}}]
+    #          │ Enum.group_by (key: term, value: {doc_id, count})
+    #          ▼ %{"cat" => [{"doc1", 2}], "dog" => [{"doc1", 1}]}
     documents
     |> Enum.flat_map(fn {doc_id, text} ->
       text
@@ -835,12 +883,24 @@ defmodule InvertedIndex do
   end
 
   def search(index, terms, :or) do
+    # FLOW | terms ["beam", "functional"] (postings ["doc2"], ["doc1", "doc3"])
+    #          │ Enum.flat_map(Map.get(index, term, []))
+    #          ▼ ["doc2", "doc1", "doc3"]
+    #          │ Enum.uniq()
+    #          ▼ ["doc2", "doc1", "doc3"]
     terms
     |> Enum.flat_map(&Map.get(index, &1, []))
     |> Enum.uniq()
   end
 
   def search(index, terms, :and) do
+    # FLOW | terms ["elixir", "functional"] (postings ["doc1","doc2"], ["doc1","doc3"])
+    #          │ Enum.map(Map.get) → Enum.map(MapSet.new/1)
+    #          ▼ [#MapSet<["doc1", "doc2"]>, #MapSet<["doc1", "doc3"]>]
+    #          │ Enum.reduce(MapSet.intersection/2)
+    #          ▼ #MapSet<["doc1"]>
+    #          │ MapSet.to_list()
+    #          ▼ ["doc1"]
     terms
     |> Enum.map(&Map.get(index, &1, []))
     |> Enum.map(&MapSet.new/1)
@@ -864,6 +924,13 @@ defmodule TFIDF do
   end
 
   def rank(index, total_docs, query_terms) do
+    # FLOW | index %{"elixir" => [{"doc1",1},{"doc2",1}], "functional" => [{"doc1",1},{"doc3",1}]}, query ["elixir","functional"]
+    #          │ Map.keys → flat_map postings → uniq
+    #          ▼ ["doc1", "doc2", "doc3"]                        (candidate docs)
+    #          │ per doc: Σ score(term, doc)
+    #          ▼ [{"doc1", 0.8109}, {"doc2", 0.4055}, {"doc3", 0.4055}]   (doc1 = 2·log(3/2), NOT log(3))
+    #          │ Enum.reject(score == 0.0) → Enum.sort_by(-score)
+    #          ▼ [{"doc1", 0.8109}, {"doc2", 0.4055}, {"doc3", 0.4055}]
     index
     |> Map.keys()
     |> Enum.flat_map(fn term ->
@@ -1139,6 +1206,10 @@ defmodule TwoSumProofTest do
 
     # 5W1H | Who: reader. What: recursive hash map passes all three examples, same order as brute force. When/Where: article Solution 2 (recursion). How: equality asserts. Why: optimal O(n) correctness.
     # STAR | Situation: same three examples. Task: lock outputs. Action: two_sum each. Result: [0,1], [1,2], [0,1].
+    # FLOW (two_sum([2,7,11,15], 9))
+    # find([2,7,11,15], 9, %{}, 0)
+    #   need 7, miss → find([7,11,15], 9, %{2 => 0}, 1)
+    #     need 2, hit 0 → [0, 1]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "recursive hash map passes the three examples" do
       assert TwoSumRec.two_sum([2, 7, 11, 15], 9) == [0, 1]
@@ -1348,6 +1419,10 @@ defmodule MedianProofTest do
 
     # 5W1H | Who: reader. What: atom-sentinel binary search matches brute force on every case incl. swapped inputs. When/Where: article Solution 2 (recursion). How: equality asserts incl. is_float. Why: optimal O(log) correctness.
     # STAR | Situation: same six inputs. Task: lock outputs. Action: find_median each. Result: 2.0, 2.5, 2.0, 2.0, -0.5, 0.0, all floats.
+    # FLOW ([1,2],[3,4]: a=[1,2], total=4, half=2)
+    # p1=1, p2=1: left1=1, right1=2, left2=3, right2=4 → left2 > right1 → low=2
+    # p1=2, p2=0: left1=2, right1=inf, left2=-inf, right2=3 → max=2, min=3
+    #          ▼ (2 + 3) / 2 = 2.5
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "atom binary search matches brute force" do
       assert MedianAtomBS.find_median_sorted_arrays([1, 3], [2]) == 2.0
@@ -1673,6 +1748,13 @@ defmodule SubstrProofTest do
   describe "Longest Substring: examples and traps" do
     # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus classic traps (abba, dvdf), full-repeat, all-unique, single char, Unicode. When/Where: article examples + pitfalls. How: equality asserts per version. Why: baseline + trap coverage.
     # STAR | Situation: 10 inputs from "" to "éàüé". Task: lock every output. Action: run brute, rec, reduce_while on each. Result: 3,1,3,0,1,2,3,6,2,3 on all three.
+    # FLOW (s = "abba", graphemes + with_index)
+    # | i | char | left | max | last_seen          |
+    # | 0 | a    | 0    | 1   | %{"a" => 0}        |
+    # | 1 | b    | 0    | 2   | %{"a"=>0, "b"=>1}  |
+    # | 2 | b    | 2    | 2   | %{"a"=>0, "b"=>2}  |  ← left jumps past prev b
+    # | 3 | a    | 2    | 2   | %{"a"=>3, "b"=>2}  |
+    #          ▼ elem(1) = 2
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "all versions agree on examples, traps and edges" do
       cases = [
@@ -1843,6 +1925,11 @@ defmodule PalinProofTest do
 
     # 5W1H | Who: reader. What: FIXED expand-around-center matches brute force on every case above. When/Where: article Solution 2 after moving Enum.at out of the guard. How: equality asserts. Why: proves the algorithm once the guard is fixed.
     # STAR | Situation: same eight inputs. Task: lock agreement. Action: longest_palindrome each. Result: identical outputs.
+    # FLOW ("babad": odd (i,i) vs even (i,i+1) per center, keep longest)
+    # i=0: odd {0,1} "b", even {1,0} → best {0,1}
+    # i=1: odd expand(1,1)→(0,2)→(-1,3) = {0,3} "bab" → best {0,3}
+    # i=2..3: length 3 never beaten
+    #          ▼ slice(0, 3) = "bab"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "fixed expand matches brute force" do
       for s <- ["babad", "cbbd", "racecar", "abba", "a", "aaaa", "été", "abcde", "abcba", "abccba", "bananas", "aabbaa"] do
@@ -1996,6 +2083,10 @@ defmodule ZigzagProofTest do
   describe "Zigzag: simulations" do
     # 5W1H | Who: reader. What: map simulation passes both LeetCode examples plus direction/edge cases (2 rows, rows > length, 1 row, punctuation). When/Where: article Solution 1. How: equality asserts. Why: recommended approach correctness.
     # STAR | Situation: PAYPALISHIRING/3, /4, A/1, /2, AB/5, HELLO/1, a,b.c/2. Task: lock outputs. Action: convert each. Result: PAHNAPLSIIGYIR, PINALSIGYAHRPI, A, PYAIHRNAPLSIIG, AB, HELLO, abc,..
+    # FLOW ("PAYPALISHIRING", rows=3: row cycle 0,1,2,1,…)
+    # P0 A1 Y2 P1 A0 L1 I2 S1 H0 I1 R2 I1 N0 G1
+    # row 0 ▼ "PAHN" | row 1 ▼ "APLSIIG" | row 2 ▼ "YIR"
+    #          ▼ "PAHN" <> "APLSIIG" <> "YIR" = "PAHNAPLSIIGYIR"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "map simulation passes examples and edges" do
       assert ZigzagMap.convert("PAYPALISHIRING", 3) == "PAHNAPLSIIGYIR"
@@ -2149,6 +2240,9 @@ defmodule ReverseIntProofTest do
   describe "Reverse Integer: examples and boundaries" do
     # 5W1H | Who: reader. What: all four versions pass the LeetCode examples (sign, trailing zero, overflow-to-zero). When/Where: article examples 1-4. How: equality asserts per version. Why: baseline correctness.
     # STAR | Situation: 123, -123, 120, 1534236469. Task: lock outputs. Action: reverse each on all four. Result: 321, -321, 21, 0 everywhere.
+    # FLOW (reverse(123) via do_reverse/2 accumulator)
+    # (123, 0) → (12, 3) → (1, 32) → (0, 321)
+    #          ▼ 321
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "all versions pass the four examples" do
       for {x, expected} <- [{123, 321}, {-123, -321}, {120, 21}, {1_534_236_469, 0}] do
@@ -2292,6 +2386,9 @@ defmodule AtoiProofTest do
   describe "atoi: examples and edges" do
     # 5W1H | Who: reader. What: all three versions pass the five article examples (spaces, sign, trailing junk, no-digits). When/Where: article examples. How: equality asserts per version. Why: baseline parsing contract.
     # STAR | Situation: "42", " -042", "1337c0d3", "0-1", "words and 987". Task: lock outputs. Action: my_atoi each on all three. Result: 42, -42, 1337, 0, 0 everywhere.
+    # FLOW (my_atoi(" -042") via skip + parse_digits)
+    # skip " " → "-" sign, i=2 → digits 0, 4, 2 (acc 0 → 4 → 42)
+    #          ▼ -1 * 42 = -42
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "all versions pass the five examples" do
       for {s, expected} <- [
@@ -2717,6 +2814,11 @@ defmodule RegexProofTest do
   describe "Regex: correct versions" do
     # 5W1H | Who: reader. What: naive recursion passes the four LeetCode examples plus six extras (empty pattern/string, star edge, classic mississippi). When/Where: article Solution 1. How: equality asserts. Why: baseline correctness.
     # STAR | Situation: ten (s, p) cases. Task: lock outputs. Action: is_match each. Result: false, true, true, true, true, false, false, false, true, true.
+    # FLOW (is_match("aab", "c*a*b"))
+    # [a,a,b] vs [c,*,a,*,b]: c* zero → [a,a,b] vs [a,*,b]
+    # a* zero → [a,a,b] vs [b]: a vs b ✗ → backtrack
+    # a* one: [a,b] vs [a,*,b] → zero: [a,b] vs [b] ✗ → one: [b] vs [a,*,b]
+    #   → zero: [b] vs [b] ✓ → true
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "naive recursion passes examples and extras" do
       for {s, p, expected} <- @cases do
@@ -2917,6 +3019,12 @@ defmodule WaterProofTest do
 
     # 5W1H | Who: reader. What: recursive two-pointer matches brute force on every case. When/Where: article Solution 2 (recursion). How: equality asserts. Why: optimal O(n) correctness.
     # STAR | Situation: same ten arrays. Task: lock agreement. Action: max_area each. Result: identical outputs.
+    # FLOW (max_area([4,3,2,1,4]))
+    # (l=0,r=4): min(4,4)*4 = 16 → tie → r=3
+    # (l=0,r=3): min(4,1)*3 = 3 → r=2
+    # (l=0,r=2): min(4,2)*2 = 4 → r=1
+    # (l=0,r=1): min(4,3)*1 = 3 → r=0 → halt
+    #          ▼ 16
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "recursive two-pointer matches brute force" do
       for {h, expected} <- @cases do
@@ -3016,6 +3124,9 @@ defmodule RomanProofTest do
   describe "Roman: correct versions" do
     # 5W1H | Who: reader. What: greedy version passes the five LeetCode examples plus subtractive forms, repeat-heavy numerals and both range ends. When/Where: article Solution 1. How: equality asserts. Why: greedy-with-subtractives correctness.
     # STAR | Situation: 16 inputs incl. 3999 and 3888. Task: lock outputs. Action: int_to_roman each. Result: all match (note: 3999 is MMMCMXCIX, three Ms).
+    # FLOW (int_to_roman(1994))
+    # 1994 → M → 994 → CM → 94 → XC → 4 → IV → 0
+    #          ▼ "M" <> "CM" <> "XC" <> "IV" = "MCMXCIV"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "greedy passes examples and edges" do
       for {n, expected} <- @cases do
@@ -3254,6 +3365,9 @@ defmodule LcpProofTest do
   describe "LCP: correct versions" do
     # 5W1H | Who: reader. What: all three scans pass the LeetCode examples plus singletons, trailing empties, full-overlap and no-overlap batteries. When/Where: article examples + edges. How: equality asserts per version. Why: baseline scanning contract.
     # STAR | Situation: ten inputs. Task: lock outputs. Action: longest_common_prefix each on all three. Result: identical correct values everywhere.
+    # FLOW (["flower","flow","flight"], prefix starts "flower")
+    # vs "flow": "flower"→"flowe"→"flow" ✓ → vs "flight": "flow"→"flo"→"fl" ✓
+    #          ▼ "fl"
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "all versions pass examples and battery" do
       for {strs, expected} <- @cases do
@@ -3462,6 +3576,11 @@ defmodule Sum3ProofTest do
   describe "3Sum: correct versions" do
     # 5W1H | Who: reader. What: all three versions pass the LeetCode examples (brute compared as a set — MapSet order is unspecified; two-pointer versions compared exactly, incl. article order). When/Where: article examples 1-3. How: set + exact asserts. Why: baseline correctness with order discipline.
     # STAR | Situation: three example inputs. Task: lock outputs. Action: three_sum each on all three. Result: article outputs everywhere.
+    # FLOW ([-1,0,1,2,-1,-4] sorted [-4,-1,-1,0,1,2])
+    # i=0,x=-4: no pair sums to 4 → i=1,x=-1: (l=2,r=5) -1-1+2=0 → [-1,-1,2]
+    #   skip → (l=3,r=4) -1+0+1=0 → [-1,0,1] → halt
+    # i=2 dup skip; i=3,x=0: 0+1+2>0 → halt; i>=4 stop
+    #          ▼ [[-1,-1,2],[-1,0,1]]
     # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
     test "all versions pass the three examples" do
       for {nums, expected} <- @examples do
