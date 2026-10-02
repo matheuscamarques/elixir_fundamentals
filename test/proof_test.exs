@@ -3282,3 +3282,215 @@ defmodule LcpProofTest do
     end
   end
 end
+
+# 3Sum article code, inlined here (this repo never uses /lib).
+# NOTE: the article names every version `Solution`; renamed here so all three
+# can coexist in one file.
+defmodule Sum3Brute do
+  @spec three_sum(nums :: [integer]) :: [[integer]]
+  def three_sum(nums) do
+    n = length(nums)
+    nums = List.to_tuple(nums)
+
+    0..(n - 3)
+    |> Enum.reduce(MapSet.new(), fn i, acc ->
+      (i + 1)..(n - 2)
+      |> Enum.reduce(acc, fn j, acc2 ->
+        (j + 1)..(n - 1)
+        |> Enum.reduce(acc2, fn k, acc3 ->
+          if elem(nums, i) + elem(nums, j) + elem(nums, k) == 0 do
+            triplet = [elem(nums, i), elem(nums, j), elem(nums, k)] |> Enum.sort()
+            MapSet.put(acc3, triplet)
+          else
+            acc3
+          end
+        end)
+      end)
+    end)
+    |> MapSet.to_list()
+  end
+end
+
+defmodule Sum3Rec do
+  @spec three_sum(nums :: [integer]) :: [[integer]]
+  def three_sum(nums) do
+    nums |> Enum.sort() |> List.to_tuple() |> find_triplets(0, [])
+  end
+
+  defp find_triplets(nums, i, acc) when i >= tuple_size(nums) - 2, do: Enum.reverse(acc)
+
+  defp find_triplets(nums, i, acc) do
+    x = elem(nums, i)
+
+    if x > 0 do
+      Enum.reverse(acc)
+    else
+      if i > 0 and elem(nums, i - 1) == x do
+        find_triplets(nums, i + 1, acc)
+      else
+        acc = two_pointers(nums, i, i + 1, tuple_size(nums) - 1, x, acc)
+        find_triplets(nums, i + 1, acc)
+      end
+    end
+  end
+
+  defp two_pointers(_nums, _i, left, right, _x, acc) when left >= right, do: acc
+
+  defp two_pointers(nums, i, left, right, x, acc) do
+    y = elem(nums, left)
+    z = elem(nums, right)
+    sum = x + y + z
+
+    cond do
+      sum == 0 ->
+        acc = [[x, y, z] | acc]
+        new_left = skip_duplicates_left(nums, left, right)
+        new_right = skip_duplicates_right(nums, new_left, right)
+        two_pointers(nums, i, new_left, new_right, x, acc)
+
+      sum < 0 ->
+        two_pointers(nums, i, left + 1, right, x, acc)
+
+      true ->
+        two_pointers(nums, i, left, right - 1, x, acc)
+    end
+  end
+
+  defp skip_duplicates_left(nums, left, right) do
+    if left + 1 < right and elem(nums, left) == elem(nums, left + 1) do
+      skip_duplicates_left(nums, left + 1, right)
+    else
+      left + 1
+    end
+  end
+
+  defp skip_duplicates_right(nums, left, right) do
+    if right - 1 > left and elem(nums, right) == elem(nums, right - 1) do
+      skip_duplicates_right(nums, left, right - 1)
+    else
+      right - 1
+    end
+  end
+end
+
+defmodule Sum3Rw do
+  @spec three_sum(nums :: [integer]) :: [[integer]]
+  def three_sum(nums) do
+    sorted = Enum.sort(nums)
+    tuple = List.to_tuple(sorted)
+    n = tuple_size(tuple)
+
+    Enum.reduce_while(0..(n - 3), [], fn i, acc ->
+      x = elem(tuple, i)
+
+      if x > 0 do
+        {:halt, acc}
+      else
+        if i > 0 and elem(tuple, i - 1) == x do
+          {:cont, acc}
+        else
+          {:cont, two_sum(tuple, i, x, acc)}
+        end
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp two_sum(tuple, i, x, acc) do
+    do_two_sum(tuple, i, i + 1, tuple_size(tuple) - 1, x, acc)
+  end
+
+  defp do_two_sum(_tuple, _i, left, right, _x, acc) when left >= right, do: acc
+
+  defp do_two_sum(tuple, i, left, right, x, acc) do
+    y = elem(tuple, left)
+    z = elem(tuple, right)
+    sum = x + y + z
+
+    cond do
+      sum == 0 ->
+        new_acc = [[x, y, z] | acc]
+        new_left = skip_left(tuple, left, right)
+        new_right = skip_right(tuple, new_left, right)
+        do_two_sum(tuple, i, new_left, new_right, x, new_acc)
+
+      sum < 0 ->
+        do_two_sum(tuple, i, left + 1, right, x, acc)
+
+      true ->
+        do_two_sum(tuple, i, left, right - 1, x, acc)
+    end
+  end
+
+  defp skip_left(tuple, left, right) do
+    if left + 1 < right and elem(tuple, left) == elem(tuple, left + 1) do
+      skip_left(tuple, left + 1, right)
+    else
+      left + 1
+    end
+  end
+
+  defp skip_right(tuple, left, right) do
+    if right - 1 > left and elem(tuple, right) == elem(tuple, right - 1) do
+      skip_right(tuple, left, right - 1)
+    else
+      right - 1
+    end
+  end
+end
+
+defmodule Sum3ProofTest do
+  # Proof suite for the article "Solving LeetCode's 3Sum in Elixir"
+  # (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  @examples [
+    {[-1, 0, 1, 2, -1, -4], [[-1, -1, 2], [-1, 0, 1]]},
+    {[0, 1, 1], []},
+    {[0, 0, 0], [[0, 0, 0]]}
+  ]
+
+  @battery [
+    [0, 0, 0, 0],
+    [-2, -2, 0, 0, 2, 2],
+    [-5, -4, -3],
+    [1, 2, 3],
+    [3, -2, 1, 0, -1, -4, 2],
+    [-1, -1, 2]
+  ]
+
+  describe "3Sum: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples (brute compared as a set — MapSet order is unspecified; two-pointer versions compared exactly, incl. article order). When/Where: article examples 1-3. How: set + exact asserts. Why: baseline correctness with order discipline.
+    # STAR | Situation: three example inputs. Task: lock outputs. Action: three_sum each on all three. Result: article outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the three examples" do
+      for {nums, expected} <- @examples do
+        assert Sum3Brute.three_sum(nums) |> MapSet.new() == MapSet.new(expected)
+        assert Sum3Rec.three_sum(nums) == expected
+        assert Sum3Rw.three_sum(nums) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: all three agree (as sets) on duplicate-heavy, all-negative, all-positive and multi-triplet batteries. When/Where: beyond-article robustness incl. dup-skipping and early-break paths. How: set-equality asserts. Why: proves same solution set, not just same examples.
+    # STAR | Situation: six batteries. Task: prove agreement. Action: three_sum each on all three, compare sets. Result: equal everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on the battery" do
+      for nums <- @battery do
+        assert Sum3Brute.three_sum(nums) |> MapSet.new() ==
+                 Sum3Rec.three_sum(nums) |> MapSet.new()
+
+        assert Sum3Rec.three_sum(nums) |> MapSet.new() ==
+                 Sum3Rw.three_sum(nums) |> MapSet.new()
+      end
+    end
+
+    # 5W1H | Who: prover. What: duplicate-heavy [0,0,0,0] yields exactly one triplet on all three — dup-skipping works without relying on the brute-force set. When/Where: article duplicate-skipping logic. How: exact asserts. Why: dedup is the core 3Sum difficulty.
+    # STAR | Situation: [0,0,0,0]. Task: prove single triplet. Action: three_sum on all three. Result: [[0,0,0]] thrice.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "duplicates collapse to one triplet" do
+      assert Sum3Brute.three_sum([0, 0, 0, 0]) |> MapSet.new() == MapSet.new([[0, 0, 0]])
+      assert Sum3Rec.three_sum([0, 0, 0, 0]) == [[0, 0, 0]]
+      assert Sum3Rw.three_sum([0, 0, 0, 0]) == [[0, 0, 0]]
+    end
+  end
+end
