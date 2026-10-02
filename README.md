@@ -74,8 +74,17 @@ then read the corresponding test comment. Do not guess — reproduce.
 ```text
 test/proof_test.exs           # full proofs: 5W1H + STAR + FLOW, warning-clean
 test/corrections_test.exs     # frozen mistake-rows split for tuning
+scripts/derive.exs            # .exs → dataset/*.jsonl (mix run scripts/derive.exs)
+scripts/lint.exs              # schema linter (mix run scripts/lint.exs)
+dataset/*.jsonl               # derived tuning rows: explain/detect/fix/generate
 lib/elixir_fundamentals.ex    # unused placeholder (repo keeps code in test files)
 ```
+
+## Derived artifacts (never edit by hand)
+
+`mix run scripts/derive.exs` parses both suites and emits versioned rows —
+re-run after editing tests. `mix run scripts/lint.exs` enforces the
+CONTRIBUTING.md schema (errors fail, vague-`Why` warns).
 
 ## Adding a newly spotted AI mistake
 

@@ -1,0 +1,4 @@
+{"broken_module":"PalHalfBroken","fixed_module":"PalHalfFixed","proven_by":"first half-reversal rejects real palindromes","task":"fix","why":"compares original x against the reversed half instead of the first half"}
+{"broken_module":"WaterRwVerbatim","fixed_module":"WaterRwFixed","proven_by":"verbatim reduce_while raises MatchError on any input","task":"fix","why":"destructures {_, max_area} but the accumulator is always a 3-tuple"}
+{"broken_module":"VerbatimRegexDP","fixed_module":"RegexDPFixed","proven_by":"verbatim bottom-up crashes on table init","task":"fix","why":"nested for-into-map collects maps as entries instead of tuples"}
+{"broken_module":"AddTwoNumbersAcc","fixed_module":"AddTwoNumbersRecursive","proven_by":"accumulator version returns forward order","task":"fix","why":"prepending LSB-first without reversing yields MSB-first output"}
