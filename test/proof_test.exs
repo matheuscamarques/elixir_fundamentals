@@ -8211,3 +8211,225 @@ defmodule CandyProofTest do
     end
   end
 end
+
+# Stirling (Count Ways to Distribute Candies) article code, inlined here
+# (never in /lib). NOTE: renamed modules so all versions coexist.
+# StirBottomVerb is verbatim (ascending in-place + stale dp[0]); StirTopVerb
+# is compiled from a verbatim source string (its mixed plain/tuple returns
+# and unused vars warn). Fixed versions below, per the standing rule.
+defmodule StirBrute do
+  @mod 1_000_000_007
+  def ways_to_distribute(n, k) do
+    1..max(n, 1)
+    |> Enum.to_list()
+    |> then(fn l -> if n == 0, do: [], else: l end)
+    |> partitions(k)
+    |> length()
+    |> rem(@mod)
+  end
+
+  defp partitions([], 0), do: [[]]
+  defp partitions([], _), do: []
+  defp partitions(_list, 0), do: []
+
+  defp partitions([h | t], k) do
+    new_sets = partitions(t, k - 1) |> Enum.map(&[[h] | &1])
+
+    existing =
+      partitions(t, k)
+      |> Enum.flat_map(fn partition ->
+        Enum.map(0..(k - 1), fn i -> List.update_at(partition, i, &[h | &1]) end)
+      end)
+
+    new_sets ++ existing
+  end
+end
+
+defmodule StirBottomVerb do
+  @mod 1_000_000_007
+  def ways_to_distribute(n, k) do
+    cond do
+      k > n -> 0
+      k == n -> 1
+      true -> build_dp(n, k)
+    end
+  end
+
+  defp build_dp(n, k) do
+    initial_dp = List.duplicate(0, k + 1) |> List.replace_at(0, 1)
+
+    final_dp =
+      Enum.reduce(1..n, initial_dp, fn i, dp ->
+        max_j = min(i, k)
+
+        1..max_j
+        |> Enum.reduce(dp, fn j, acc ->
+          valor = (j * Enum.at(acc, j) + Enum.at(acc, j - 1)) |> rem(@mod)
+          List.replace_at(acc, j, valor)
+        end)
+      end)
+
+    Enum.at(final_dp, k)
+  end
+end
+
+defmodule StirBottomFixed do
+  # FIX: iterate j DESCENDING (reads stay old) and reset dp[0] to 0 at the
+  # end of each row (S(i,0) = 0 for i >= 1; the initial 1 serves row 1 only).
+  @mod 1_000_000_007
+  def ways_to_distribute(n, k) do
+    cond do
+      k > n -> 0
+      k == n -> 1
+      true -> build_dp(n, k)
+    end
+  end
+
+  defp build_dp(n, k) do
+    initial_dp = List.duplicate(0, k + 1) |> List.replace_at(0, 1)
+
+    final_dp =
+      Enum.reduce(1..n, initial_dp, fn i, dp ->
+        max_j = min(i, k)
+
+        stepped =
+          max_j..1//-1
+          |> Enum.reduce(dp, fn j, acc ->
+            valor = (j * Enum.at(acc, j) + Enum.at(acc, j - 1)) |> rem(@mod)
+            List.replace_at(acc, j, valor)
+          end)
+
+        List.replace_at(stepped, 0, 0)
+      end)
+
+    Enum.at(final_dp, k)
+  end
+end
+
+defmodule StirTopFixed do
+  # FIX: thread {result, memo} through EVERY call (verbatim mixes plain
+  # numbers and tuples, crashing on integer + tuple).
+  @mod 1_000_000_007
+  def ways_to_distribute(n, k) do
+    {result, _} = do_ways(n, k, %{})
+    result
+  end
+
+  defp do_ways(n, k, memo) when k > n or k < 0 or n < 0, do: {0, memo}
+  defp do_ways(0, 0, memo), do: {1, memo}
+
+  defp do_ways(n, k, memo) do
+    case Map.get(memo, {n, k}) do
+      nil ->
+        {a, memo1} = do_ways(n - 1, k, memo)
+        {b, memo2} = do_ways(n - 1, k - 1, memo1)
+        result = rem(k * a + b, @mod)
+        {result, Map.put(memo2, {n, k}, result)}
+
+      cached ->
+        {cached, memo}
+    end
+  end
+end
+
+defmodule StirProofTest do
+  # Proof suite for the article "Como Penso e Resolvo Count Ways to
+  # Distribute Candies em Elixir" (1.20.1/OTP29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Top-down version VERBATIM (renamed module only): mixed return shapes
+  # (plain 0/1 vs {result, memo}) plus unused vars. Runtime-compiled.
+  @verbatim_top_src """
+  defmodule CkVerbatimStirTop do
+    @mod 1_000_000_007
+    def ways_to_distribute(n, k) do
+      do_ways(n, k, %{})
+    end
+    defp do_ways(n, k, memo) when k > n, do: 0
+    defp do_ways(n, k, _memo) when k == n, do: 1
+    defp do_ways(0, 0, _memo), do: 1
+    defp do_ways(_, 0, _memo), do: 0
+    defp do_ways(n, k, memo) do
+      key = {n, k}
+      case Map.get(memo, key) do
+        nil ->
+          result = (k * do_ways(n - 1, k, memo) + do_ways(n - 1, k - 1, memo)) |> rem(@mod)
+          {result, Map.put(memo, key, result)}
+        cached ->
+          {cached, memo}
+      end
+    end
+  end
+  """
+
+  describe "Stirling: correct and fixed versions" do
+    # 5W1H | Who: reader. What: brute force enumerates true Stirling numbers on small inputs (the oracle everything else is checked against). When/Where: article brute force, n ≤ 5. How: equality asserts. Why: baseline partition-count correctness.
+    # STAR | Situation: (3,2), (4,2), (4,3), (5,2), (5,3). Task: lock values. Action: ways_to_distribute each. Result: 3, 7, 6, 15, 25.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force matches known Stirling numbers" do
+      for {n, k, expected} <- [{3, 2, 3}, {4, 2, 7}, {4, 3, 6}, {5, 2, 15}, {5, 3, 25}] do
+        assert StirBrute.ways_to_distribute(n, k) == expected
+      end
+    end
+
+    # 5W1H | Who: reader. What: FIXED bottom-up (descending j + dp[0] reset) matches brute on small inputs and hits the article's own headline answer S(20,5) mod = 206085257. When/Where: prover fix. How: equality asserts incl. n=20. Why: proves the two-line fix restores the table.
+    # STAR | Situation: brute battery + (20,5). Task: lock agreement and headline. Action: ways_to_distribute each. Result: identical; 206085257.
+    # FLOW | fixed i=2 row: j=2 first (2*0+1=1, old reads), then j=1 (1*1+0=1); dp[0] reset to 0 → [0,1,1] — stale-1 never leaks.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed bottom-up matches brute and headline" do
+      for {n, k, expected} <- [{3, 2, 3}, {4, 2, 7}, {4, 3, 6}, {5, 2, 15}, {5, 3, 25}, {1, 1, 1}, {5, 5, 1}, {5, 1, 1}] do
+        assert StirBottomFixed.ways_to_distribute(n, k) == expected
+      end
+
+      assert StirBottomFixed.ways_to_distribute(20, 5) == 206_085_257
+    end
+
+    # 5W1H | Who: reader. What: FIXED top-down (threaded memo) agrees with fixed bottom-up on battery + n=20. When/Where: prover fix. How: equality asserts. Why: proves both fixes converge.
+    # STAR | Situation: same battery + (20,5). Task: lock agreement. Action: ways_to_distribute each on both fixed. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed top-down matches fixed bottom-up" do
+      for {n, k} <- [{3, 2}, {4, 2}, {4, 3}, {5, 2}, {5, 3}, {1, 1}, {10, 4}] do
+        assert StirTopFixed.ways_to_distribute(n, k) == StirBottomFixed.ways_to_distribute(n, k)
+      end
+
+      assert StirTopFixed.ways_to_distribute(20, 5) == 206_085_257
+    end
+
+    # 5W1H | Who: prover. What: exact (unmodded) S(20,5) is 749206090500 — the article's printed intermediate 1881780996 is inconsistent with its own output (1881780996 mod 1e9+7 = 881780989, not 206085257). When/Where: article worked example. How: arithmetic asserts on literals. Why: printed intermediates must cohere with printed outputs.
+    # STAR | Situation: 1881780996 vs true value. Task: expose the gap. Action: rem the printed number. Result: 881780989 ≠ 206085257.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "printed intermediate contradicts printed output" do
+      assert rem(1_881_780_996, 1_000_000_007) == 881_780_989
+      refute rem(1_881_780_996, 1_000_000_007) == 206_085_257
+    end
+  end
+
+  describe "Stirling: broken versions (article errors documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim bottom-up is wrong on every non-trivial input (ascending in-place reads just-written cells + stale dp[0]=1 poisons column 1 onward): (4,2)→18 not 7, and its own trace table ([1,1,1],[1,1,3],[1,1,7]) matches neither the code's output nor... actually the table holds TRUE values the code never produces. When/Where: article Solution bottom-up. How: exact-wrong-value asserts. Why: in-place direction + stale zero-cell.
+    # STAR | Situation: verbatim DP on (3,2),(4,2),(5,1). Task: prove wrong outputs. Action: ways_to_distribute each. Result: 7, 18, 5 (should be 3, 7, 1).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim bottom-up returns wrong numbers" do
+      assert StirBottomVerb.ways_to_distribute(3, 2) == 7
+      assert StirBottomVerb.ways_to_distribute(4, 2) == 18
+      assert StirBottomVerb.ways_to_distribute(5, 1) == 5
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — verbatim top-down mixes plain-number and {result, memo} returns, so the first nested call computes integer + tuple → ArithmeticError (article self-flags the threading). When/Where: article top-down version. How: runtime-compile verbatim source (stderr captured), assert_raise on apply. Why: inconsistent return shapes across clauses.
+    # STAR | Situation: verbatim top-down on (4,2). Task: prove the crash. Action: compile source, ways_to_distribute. Result: ArithmeticError.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim top-down crashes on mixed returns" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_top_src)})
+      end)
+
+      [{mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert_raise ArithmeticError, fn ->
+        apply(mod, :ways_to_distribute, [4, 2])
+      end
+    end
+  end
+end
