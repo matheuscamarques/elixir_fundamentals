@@ -6687,6 +6687,380 @@ defmodule NextPermProofTest do
   end
 end
 
+# Rotated Sorted Array article code, inlined here (this repo never uses /lib).
+# NOTE: the article names versions `Solution`; renamed here.
+# `nums` pinned as `_nums` in the pivot base clause (verbatim leaves it
+# dynamic, which the compiler flags) — behavior identical.
+defmodule RotSearchBrute do
+  @spec search(nums :: [integer], target :: integer) :: integer
+  def search(nums, target) do
+    Enum.find_index(nums, &(&1 == target)) || -1
+  end
+end
+
+defmodule RotSearchPivot do
+  @spec search(nums :: [integer], target :: integer) :: integer
+  def search(nums, target) do
+    n = length(nums)
+    if n == 0, do: -1
+
+    pivot = find_pivot(nums, 0, n - 1)
+
+    cond do
+      pivot == 0 ->
+        binary_search(nums, target, 0, n - 1)
+
+      target >= Enum.at(nums, 0) and target <= Enum.at(nums, pivot - 1) ->
+        binary_search(nums, target, 0, pivot - 1)
+
+      true ->
+        binary_search(nums, target, pivot, n - 1)
+    end
+  end
+
+  defp find_pivot(_nums, left, right) when left >= right, do: left
+
+  defp find_pivot(nums, left, right) do
+    mid = div(left + right, 2)
+
+    if Enum.at(nums, mid) > Enum.at(nums, right) do
+      find_pivot(nums, mid + 1, right)
+    else
+      find_pivot(nums, left, mid)
+    end
+  end
+
+  defp binary_search(_nums, _target, left, right) when left > right, do: -1
+
+  defp binary_search(nums, target, left, right) do
+    mid = div(left + right, 2)
+    mid_val = Enum.at(nums, mid)
+
+    cond do
+      mid_val == target -> mid
+      mid_val < target -> binary_search(nums, target, mid + 1, right)
+      true -> binary_search(nums, target, left, mid - 1)
+    end
+  end
+end
+
+defmodule RotSearchMod do
+  @spec search(nums :: [integer], target :: integer) :: integer
+  def search(nums, target) do
+    nums
+    |> List.to_tuple()
+    |> do_search(target, 0, length(nums) - 1)
+  end
+
+  defp do_search(_nums, _target, left, right) when left > right, do: -1
+
+  defp do_search(nums, target, left, right) do
+    mid = div(left + right, 2)
+    mid_val = elem(nums, mid)
+
+    cond do
+      mid_val == target ->
+        mid
+
+      elem(nums, left) <= mid_val ->
+        if elem(nums, left) <= target and target < mid_val do
+          do_search(nums, target, left, mid - 1)
+        else
+          do_search(nums, target, mid + 1, right)
+        end
+
+      true ->
+        if mid_val < target and target <= elem(nums, right) do
+          do_search(nums, target, mid + 1, right)
+        else
+          do_search(nums, target, left, mid - 1)
+        end
+    end
+  end
+end
+
+defmodule RotSearchProofTest do
+  # Proof suite for the article "Solving LeetCode's Search in Rotated Sorted
+  # Array in Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Rotated search: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus unrotated, singleton and empty inputs. When/Where: article examples 1-3 + edges. How: equality asserts per version. Why: baseline rotated-search correctness.
+    # STAR | Situation: [4,5,6,7,0,1,2]/0, /3, [1]/0, [1,2,3,4,5]/3, [2,1]/1, []. Task: lock outputs. Action: search each on all three. Result: 4, -1, -1, 2, 0, -1 everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and edges" do
+      for {nums, target, expected} <- [
+            {[4, 5, 6, 7, 0, 1, 2], 0, 4},
+            {[4, 5, 6, 7, 0, 1, 2], 3, -1},
+            {[1], 0, -1},
+            {[1, 2, 3, 4, 5], 3, 2},
+            {[1], 1, 0},
+            {[2, 1], 1, 1},
+            {[2, 1], 2, 0},
+            {[], 5, -1}
+          ] do
+        assert RotSearchBrute.search(nums, target) == expected
+        assert RotSearchPivot.search(nums, target) == expected
+        assert RotSearchMod.search(nums, target) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: all three agree on five rotations of 0..9 against present/absent targets (30 combinations). When/Where: beyond-article sweep. How: agreement asserts. Why: proves rotation handling, not just examples.
+    # STAR | Situation: pivots 0,1,3,5,9 × targets -1,0,1,5,9,10. Task: lock agreement. Action: search each on all three. Result: identical outputs everywhere.
+    # FLOW | ([4,5,6,7,0,1,2], 0): mid=3 (7), left half [4..7] sorted, 0 outside → right; mid=5 (1), left [7,0,1] unsorted → right [0,1] sorted, 0 inside → mid=4 → 4.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on rotation sweep" do
+      base = Enum.to_list(0..9)
+
+      for k <- [0, 1, 3, 5, 9],
+          t <- [-1, 0, 1, 5, 9, 10] do
+        rot = Enum.drop(base, k) ++ Enum.take(base, k)
+        expected = RotSearchBrute.search(rot, t)
+        assert RotSearchPivot.search(rot, t) == expected
+        assert RotSearchMod.search(rot, t) == expected
+      end
+    end
+  end
+end
+
+# First/Last Position article code, inlined here (never in /lib).
+# NOTE: renamed `Solution`s so all three coexist.
+defmodule RangeLinear do
+  @spec search_range(nums :: [integer], target :: integer) :: [integer]
+  def search_range(nums, target) do
+    first = Enum.find_index(nums, &(&1 == target))
+
+    last =
+      Enum.reduce(Enum.with_index(nums), -1, fn {val, idx}, acc ->
+        if val == target, do: idx, else: acc
+      end)
+
+    if first == nil, do: [-1, -1], else: [first, last]
+  end
+end
+
+defmodule RangeDirFlag do
+  @spec search_range(nums :: [integer], target :: integer) :: [integer]
+  def search_range(nums, target) do
+    n = length(nums)
+    tuple = List.to_tuple(nums)
+    first = find_boundary(tuple, target, 0, n - 1, :left)
+    last = find_boundary(tuple, target, 0, n - 1, :right)
+    if first == -1, do: [-1, -1], else: [first, last]
+  end
+
+  defp find_boundary(_tuple, _target, left, right, _dir) when left > right, do: -1
+
+  defp find_boundary(tuple, target, left, right, dir) do
+    mid = div(left + right, 2)
+    mid_val = elem(tuple, mid)
+
+    cond do
+      mid_val == target ->
+        result =
+          case dir do
+            :left -> find_boundary(tuple, target, left, mid - 1, :left)
+            :right -> find_boundary(tuple, target, mid + 1, right, :right)
+          end
+
+        if result == -1, do: mid, else: result
+
+      mid_val < target ->
+        find_boundary(tuple, target, mid + 1, right, dir)
+
+      true ->
+        find_boundary(tuple, target, left, mid - 1, dir)
+    end
+  end
+end
+
+defmodule RangeSeparate do
+  @spec search_range(nums :: [integer], target :: integer) :: [integer]
+  def search_range(nums, target) do
+    n = length(nums)
+    tuple = List.to_tuple(nums)
+    first = find_first(tuple, target, 0, n - 1)
+    last = find_last(tuple, target, 0, n - 1)
+    if first == -1, do: [-1, -1], else: [first, last]
+  end
+
+  defp find_first(_tuple, _target, left, right) when left > right, do: -1
+
+  defp find_first(tuple, target, left, right) do
+    mid = div(left + right, 2)
+    mid_val = elem(tuple, mid)
+
+    cond do
+      mid_val == target ->
+        result = find_first(tuple, target, left, mid - 1)
+        if result == -1, do: mid, else: result
+
+      mid_val < target ->
+        find_first(tuple, target, mid + 1, right)
+
+      true ->
+        find_first(tuple, target, left, mid - 1)
+    end
+  end
+
+  defp find_last(_tuple, _target, left, right) when left > right, do: -1
+
+  defp find_last(tuple, target, left, right) do
+    mid = div(left + right, 2)
+    mid_val = elem(tuple, mid)
+
+    cond do
+      mid_val == target ->
+        result = find_last(tuple, target, mid + 1, right)
+        if result == -1, do: mid, else: result
+
+      mid_val < target ->
+        find_last(tuple, target, mid + 1, right)
+
+      true ->
+        find_last(tuple, target, left, mid - 1)
+    end
+  end
+end
+
+defmodule RangeProofTest do
+  # Proof suite for the article "Solving LeetCode's Find First and Last
+  # Position of Element in Sorted Array in Elixir" (1.20.1/OTP29).
+  use ExUnit.Case, async: true
+
+  describe "Range: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples plus all-same, singleton, boundary and missing-target edges. When/Where: article examples 1-3 + edges. How: equality asserts per version. Why: baseline boundary-search correctness.
+    # STAR | Situation: nine (nums, target) inputs. Task: lock outputs. Action: search_range each on all three. Result: identical correct outputs everywhere.
+    # FLOW | ([5,7,7,8,8,10], 8, :left): mid=2 (7<8) → right; mid=4 (8) → left (3..3) → mid=3 (8) → left (3..2) → -1 → return 3.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and edges" do
+      for {nums, target, expected} <- [
+            {[5, 7, 7, 8, 8, 10], 8, [3, 4]},
+            {[5, 7, 7, 8, 8, 10], 6, [-1, -1]},
+            {[], 0, [-1, -1]},
+            {[7, 7, 7, 7], 7, [0, 3]},
+            {[5], 5, [0, 0]},
+            {[5], 4, [-1, -1]},
+            {[1, 2, 3, 4, 5], 1, [0, 0]},
+            {[1, 2, 3, 4, 5], 5, [4, 4]},
+            {[1, 1, 1, 2, 2], 2, [3, 4]}
+          ] do
+        assert RangeLinear.search_range(nums, target) == expected
+        assert RangeDirFlag.search_range(nums, target) == expected
+        assert RangeSeparate.search_range(nums, target) == expected
+      end
+    end
+  end
+end
+
+# Search Insert Position article code, inlined here (never in /lib).
+# NOTE: renamed `Solution`s so all four coexist.
+defmodule InsertLinear do
+  @spec search_insert(nums :: [integer], target :: integer) :: integer
+  def search_insert(nums, target) do
+    Enum.find_index(nums, &(&1 >= target)) || length(nums)
+  end
+end
+
+defmodule InsertRec do
+  @spec search_insert(nums :: [integer], target :: integer) :: integer
+  def search_insert(nums, target) do
+    nums
+    |> List.to_tuple()
+    |> do_search(target, 0, length(nums) - 1)
+  end
+
+  defp do_search(_tuple, _target, left, right) when left > right, do: left
+
+  defp do_search(tuple, target, left, right) do
+    mid = div(left + right, 2)
+    mid_val = elem(tuple, mid)
+
+    if mid_val < target do
+      do_search(tuple, target, mid + 1, right)
+    else
+      do_search(tuple, target, left, mid - 1)
+    end
+  end
+end
+
+defmodule InsertTailRec do
+  @spec search_insert(nums :: [integer], target :: integer) :: integer
+  def search_insert(nums, target) do
+    tuple = List.to_tuple(nums)
+    do_search(tuple, target, 0, tuple_size(tuple) - 1, tuple_size(tuple))
+  end
+
+  defp do_search(_tuple, _target, left, right, acc) when left > right, do: acc
+
+  defp do_search(tuple, target, left, right, acc) do
+    mid = div(left + right, 2)
+    mid_val = elem(tuple, mid)
+
+    if mid_val < target do
+      do_search(tuple, target, mid + 1, right, acc)
+    else
+      do_search(tuple, target, left, mid - 1, mid)
+    end
+  end
+end
+
+defmodule InsertRw do
+  @spec search_insert(nums :: [integer], target :: integer) :: integer
+  def search_insert(nums, target) do
+    tuple = List.to_tuple(nums)
+    n = tuple_size(tuple)
+
+    {left, _right} =
+      Enum.reduce_while(0..n, {0, n - 1}, fn _, {left, right} ->
+        if left > right do
+          {:halt, {left, right}}
+        else
+          mid = div(left + right, 2)
+          mid_val = elem(tuple, mid)
+
+          if mid_val < target do
+            {:cont, {mid + 1, right}}
+          else
+            {:cont, {left, mid - 1}}
+          end
+        end
+      end)
+
+    left
+  end
+end
+
+defmodule InsertProofTest do
+  # Proof suite for the article "Solving LeetCode's Search Insert Position in
+  # Elixir" (Elixir 1.20.1 / OTP 29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Insert: correct versions" do
+    # 5W1H | Who: reader. What: all four versions pass the LeetCode examples plus empty, singleton and beyond-ends edges. When/Where: article examples 1-4 + edges. How: equality asserts per version. Why: baseline lower-bound correctness.
+    # STAR | Situation: eight (nums, target) inputs. Task: lock outputs. Action: search_insert each on all four. Result: 2, 1, 4, 0, 0, 0, 0, 1 everywhere.
+    # FLOW | ([1,3,5,6], 2): (0,3) mid=1 (3≥2) → right=0; (0,0) mid=0 (1<2) → left=1; (1,0) → return left=1.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass examples and edges" do
+      for {nums, target, expected} <- [
+            {[1, 3, 5, 6], 5, 2},
+            {[1, 3, 5, 6], 2, 1},
+            {[1, 3, 5, 6], 7, 4},
+            {[1, 3, 5, 6], 0, 0},
+            {[], 5, 0},
+            {[5], 5, 0},
+            {[5], 3, 0},
+            {[5], 7, 1}
+          ] do
+        assert InsertLinear.search_insert(nums, target) == expected
+        assert InsertRec.search_insert(nums, target) == expected
+        assert InsertTailRec.search_insert(nums, target) == expected
+        assert InsertRw.search_insert(nums, target) == expected
+      end
+    end
+  end
+end
+
 # Longest Valid Parentheses article code, inlined here (this repo never uses
 # /lib). NOTE: the article names versions `Solution`; renamed here.
 # The stack version matches `[top | rest]` but never uses `top` (verbatim
