@@ -8433,3 +8433,147 @@ defmodule StirProofTest do
     end
   end
 end
+
+# Revised Stirling article (list-vs-tuple correction) code, inlined here
+# (never in /lib). StirTuple is verbatim (fresh tuple per row — correct).
+# StirMapVerb is verbatim (ascending in-place + sticky key 0 — same stale-zero
+# family as the list version). StirMapFixed descends and re-zeros key 0.
+defmodule StirTuple do
+  @mod 1_000_000_007
+
+  @spec ways_to_distribute(n :: integer, k :: integer) :: integer
+  def ways_to_distribute(n, k) do
+    cond do
+      k > n -> 0
+      k == n -> 1
+      true -> build_dp(n, k)
+    end
+  end
+
+  defp build_dp(n, k) do
+    initial_dp =
+      0..k
+      |> Enum.map(fn j -> if j == 0, do: 1, else: 0 end)
+      |> List.to_tuple()
+
+    final_dp =
+      Enum.reduce(1..n, initial_dp, fn i, dp ->
+        max_j = min(i, k)
+
+        0..k
+        |> Enum.map(fn j ->
+          cond do
+            j == 0 -> 0
+            j > max_j -> 0
+            true -> (j * elem(dp, j) + elem(dp, j - 1)) |> rem(@mod)
+          end
+        end)
+        |> List.to_tuple()
+      end)
+
+    elem(final_dp, k)
+  end
+end
+
+defmodule StirMapVerb do
+  @mod 1_000_000_007
+
+  def ways_to_distribute(n, k) do
+    cond do
+      k > n -> 0
+      k == n -> 1
+      true -> build_dp_map(n, k)
+    end
+  end
+
+  defp build_dp_map(n, k) do
+    initial = %{0 => 1}
+
+    final =
+      Enum.reduce(1..n, initial, fn i, dp ->
+        max_j = min(i, k)
+
+        Enum.reduce(1..max_j, dp, fn j, acc ->
+          valor = (j * Map.get(acc, j, 0) + Map.get(acc, j - 1, 0)) |> rem(@mod)
+          Map.put(acc, j, valor)
+        end)
+      end)
+
+    Map.get(final, k, 0)
+  end
+end
+
+defmodule StirMapFixed do
+  # FIX: iterate j DESCENDING (reads stay old) and re-zero key 0 at the end
+  # of each row — the same two defects as the list version, one level up.
+  @mod 1_000_000_007
+  def ways_to_distribute(n, k) do
+    cond do
+      k > n -> 0
+      k == n -> 1
+      true -> build_dp_map(n, k)
+    end
+  end
+
+  defp build_dp_map(n, k) do
+    initial = %{0 => 1}
+
+    final =
+      Enum.reduce(1..n, initial, fn i, dp ->
+        max_j = min(i, k)
+
+        stepped =
+          max_j..1//-1
+          |> Enum.reduce(dp, fn j, acc ->
+            valor = (j * Map.get(acc, j, 0) + Map.get(acc, j - 1, 0)) |> rem(@mod)
+            Map.put(acc, j, valor)
+          end)
+
+        Map.put(stepped, 0, 0)
+      end)
+
+    Map.get(final, k, 0)
+  end
+end
+
+defmodule StirRev2ProofTest do
+  # Proof suite for the REVISED Stirling article (list-vs-tuple correction).
+  # Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Stirling revised: tuple version" do
+    # 5W1H | Who: reader. What: the tuple rewrite is correct everywhere: examples, trace rows and headline. When/Where: revised article tuple implementation. How: equality asserts + agreement with fixed list DP. Why: validates the list-vs-tuple correction.
+    # STAR | Situation: (3,2),(4,2),(20,5) + battery. Task: lock outputs. Action: ways_to_distribute each + agreement. Result: 3, 7, 206085257, identical everywhere.
+    # FLOW | i=2 row reads previous tuple {0,1,0}: j=0→0; j=1: 1*1+0=1; j=2: 2*0+1=1 → {0,1,1} (fresh row, no staleness possible).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "tuple version passes examples and agrees" do
+      for {n, k, expected} <- [{3, 2, 3}, {4, 2, 7}, {4, 3, 6}, {5, 3, 25}, {1, 1, 1}, {10, 4, 34105}] do
+        assert StirTuple.ways_to_distribute(n, k) == expected
+        assert StirTuple.ways_to_distribute(n, k) == StirBottomFixed.ways_to_distribute(n, k)
+      end
+
+      assert StirTuple.ways_to_distribute(20, 5) == 206_085_257
+    end
+  end
+
+  describe "Stirling revised: map version bugs (documented)" do
+    # 5W1H | Who: prover + future AI reader. What: the NEW map variant repeats both defects (ascending in-place reads + sticky key 0): (4,2)→18, (5,3)→158. When/Where: revised article map alternative. How: exact-wrong-value asserts. Why: direction matters as much as structure.
+    # STAR | Situation: verbatim map version. Task: prove wrong outputs. Action: ways_to_distribute each. Result: 18, 158 (should be 7, 25).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim map version repeats the defects" do
+      assert StirMapVerb.ways_to_distribute(4, 2) == 18
+      assert StirMapVerb.ways_to_distribute(5, 3) == 158
+    end
+
+    # 5W1H | Who: reader. What: FIXED map (descending + per-row zero) agrees with the tuple version on battery + headline. When/Where: prover fix. How: equality asserts. Why: proves both fixes converge.
+    # STAR | Situation: same battery + (20,5). Task: lock agreement. Action: ways_to_distribute each on both. Result: identical outputs.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed map matches tuple version" do
+      for {n, k} <- [{3, 2}, {4, 2}, {4, 3}, {5, 3}, {1, 1}, {10, 4}] do
+        assert StirMapFixed.ways_to_distribute(n, k) == StirTuple.ways_to_distribute(n, k)
+      end
+
+      assert StirMapFixed.ways_to_distribute(20, 5) == 206_085_257
+    end
+  end
+end
