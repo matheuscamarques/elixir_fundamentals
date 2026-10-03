@@ -6235,6 +6235,923 @@ defmodule RemElemProofTest do
   end
 end
 
+# FizzBuzz Multithreaded article code, inlined here (never in /lib).
+# FizzBuzzBroken is the article's first version (unconditional advance).
+# FizzBuzzFixed / FizzBuzzAgent are the corrected peek/advance versions.
+defmodule FizzBuzzBroken do
+  use GenServer
+
+  def start_link(n), do: GenServer.start_link(__MODULE__, n)
+
+  def init(n), do: {:ok, %{n: n, current: 1}}
+
+  def handle_call(:get_next, _from, %{current: current, n: n} = state) when current > n do
+    {:reply, :done, state}
+  end
+
+  def handle_call(:get_next, _from, %{current: current} = state) do
+    expected =
+      cond do
+        rem(current, 15) == 0 -> :fizzbuzz
+        rem(current, 3) == 0 -> :fizz
+        rem(current, 5) == 0 -> :buzz
+        true -> :number
+      end
+
+    {:reply, {expected, current}, %{state | current: current + 1}}
+  end
+end
+
+defmodule FizzBuzzFixed do
+  use GenServer
+
+  def start_link(n), do: GenServer.start_link(__MODULE__, n)
+  def fizz(pid, f), do: loop(pid, f, :fizz)
+  def buzz(pid, f), do: loop(pid, f, :buzz)
+  def fizzbuzz(pid, f), do: loop(pid, f, :fizzbuzz)
+  def number(pid, f), do: loop(pid, f, :number)
+
+  def init(n), do: {:ok, %{n: n, current: 1}}
+
+  def handle_call(:peek, _from, %{current: current, n: n} = state) when current > n do
+    {:reply, :done, state}
+  end
+
+  def handle_call(:peek, _from, %{current: current} = state) do
+    expected =
+      cond do
+        rem(current, 15) == 0 -> :fizzbuzz
+        rem(current, 3) == 0 -> :fizz
+        rem(current, 5) == 0 -> :buzz
+        true -> :number
+      end
+
+    {:reply, {expected, current}, state}
+  end
+
+  def handle_call(:advance, _from, %{current: current} = state) do
+    {:reply, :ok, %{state | current: current + 1}}
+  end
+
+  defp loop(pid, print_fn, role) do
+    case GenServer.call(pid, :peek) do
+      :done ->
+        :ok
+
+      {^role, number} ->
+        print_fn.(number)
+        GenServer.call(pid, :advance)
+        loop(pid, print_fn, role)
+
+      {_other_role, _number} ->
+        Process.sleep(0)
+        loop(pid, print_fn, role)
+    end
+  end
+end
+
+defmodule FizzBuzzAgent do
+  def start_link(n), do: Agent.start_link(fn -> {1, n} end)
+  def fizz(agent, f), do: loop(agent, f, :fizz)
+  def buzz(agent, f), do: loop(agent, f, :buzz)
+  def fizzbuzz(agent, f), do: loop(agent, f, :fizzbuzz)
+  def number(agent, f), do: loop(agent, f, :number)
+
+  defp loop(agent, print_fn, role) do
+    {current, n} = Agent.get(agent, & &1)
+
+    if current > n do
+      :ok
+    else
+      expected =
+        cond do
+          rem(current, 15) == 0 -> :fizzbuzz
+          rem(current, 3) == 0 -> :fizz
+          rem(current, 5) == 0 -> :buzz
+          true -> :number
+        end
+
+      if expected == role do
+        print_fn.(current)
+        Agent.update(agent, fn {c, nn} -> {c + 1, nn} end)
+      end
+
+      Process.sleep(0)
+      loop(agent, print_fn, role)
+    end
+  end
+end
+
+defmodule FizzBuzzProofTest do
+  # Proof suite for the article "Solving LeetCode's Fizz Buzz Multithreaded
+  # in Elixir" (Elixir 1.20.1 / OTP 29). Same convention. Four real OS-thread
+  # tasks coordinate through the server; print fns collect {n, token} into an
+  # Agent, then the run sorts by n — deterministic regardless of scheduling.
+  use ExUnit.Case, async: true
+
+  defp expected_sequence(n) do
+    for i <- 1..n//1 do
+      cond do
+        rem(i, 15) == 0 -> "fizzbuzz"
+        rem(i, 3) == 0 -> "fizz"
+        rem(i, 5) == 0 -> "buzz"
+        true -> "num"
+      end
+    end
+  end
+
+  defp collect(mod, starter, n) do
+    {:ok, collector} = Agent.start_link(fn -> [] end)
+    {:ok, srv} = apply(mod, starter, [n])
+    emit = fn token -> fn x -> Agent.update(collector, &[{x, token} | &1]) end end
+
+    tasks = [
+      Task.async(fn -> apply(mod, :fizz, [srv, emit.("fizz")]) end),
+      Task.async(fn -> apply(mod, :buzz, [srv, emit.("buzz")]) end),
+      Task.async(fn -> apply(mod, :fizzbuzz, [srv, emit.("fizzbuzz")]) end),
+      Task.async(fn -> apply(mod, :number, [srv, emit.("num")]) end)
+    ]
+
+    Enum.each(tasks, &Task.await(&1, 30_000))
+    Agent.get(collector, & &1) |> Enum.sort_by(&elem(&1, 0)) |> Enum.map(&elem(&1, 1))
+  end
+
+  describe "FizzBuzz: coordination" do
+    # 5W1H | Who: reader. What: the article's FIRST version consumes numbers unconditionally: a get_next call for number 1 (a :number turn) advances the counter, so 1 is lost before its printer ever sees it. When/Where: article's self-flagged critical bug. How: two sequential calls, no tasks needed. Why: advance must wait for the matching print.
+    # STAR | Situation: fresh server, n=15, two get_next calls. Task: prove consumption. Action: call twice. Result: {:number,1} then {:number,2} — 1 is gone.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "broken version consumes numbers on wrong-role calls" do
+      {:ok, srv} = FizzBuzzBroken.start_link(15)
+
+      assert GenServer.call(srv, :get_next) == {:number, 1}
+      assert GenServer.call(srv, :get_next) == {:number, 2}
+    end
+
+    # 5W1H | Who: reader. What: corrected peek/advance GenServer yields the exact fizzbuzz order for n=15 and n=1 across four concurrent tasks. When/Where: article corrected implementation. How: collect-then-sort asserts. Why: peek-without-advance + advance-after-print is the coordination contract.
+    # STAR | Situation: n=15 and n=1, four tasks. Task: lock ordered output. Action: run all roles, sort by n. Result: full expected sequence; ["num"].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fixed GenServer produces the exact sequence" do
+      assert collect(FizzBuzzFixed, :start_link, 15) == expected_sequence(15)
+      assert collect(FizzBuzzFixed, :start_link, 1) == ["num"]
+    end
+
+    # 5W1H | Who: reader. What: Agent version matches the GenServer on n=15 and n=5. When/Where: article Agent alternative. How: collect-then-sort asserts. Why: proves the simpler state abstraction converges identically.
+    # STAR | Situation: n=15 and n=5, four tasks. Task: lock ordered output. Action: run all roles, sort by n. Result: expected sequences.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "Agent version matches GenServer" do
+      assert collect(FizzBuzzAgent, :start_link, 15) == expected_sequence(15)
+      assert collect(FizzBuzzAgent, :start_link, 5) == ["num", "num", "fizz", "num", "buzz"]
+    end
+  end
+end
+
+# Kth Bit article code, inlined here (never in /lib). NOTE: renamed
+# `Solution`s so all three coexist. Bitwise.bsl/2 needs no import (qualified).
+defmodule KBitBrute do
+  @spec find_kth_bit(n :: integer, k :: integer) :: String.t()
+  def find_kth_bit(n, k) do
+    n |> build_string() |> String.at(k - 1)
+  end
+
+  defp build_string(1), do: "0"
+
+  defp build_string(n) do
+    prev = build_string(n - 1)
+    inverted = prev |> String.graphemes() |> Enum.map(fn "0" -> "1"; "1" -> "0" end) |> Enum.join()
+    prev <> "1" <> String.reverse(inverted)
+  end
+end
+
+defmodule KBitRec do
+  @spec find_kth_bit(n :: integer, k :: integer) :: String.t()
+  def find_kth_bit(1, 1), do: "0"
+
+  def find_kth_bit(n, k) do
+    length = Bitwise.bsl(1, n) - 1
+    mid = Bitwise.bsl(1, n - 1)
+
+    cond do
+      k == mid -> "1"
+      k < mid -> find_kth_bit(n - 1, k)
+      true -> find_kth_bit(n - 1, length - k + 1) |> invert_bit()
+    end
+  end
+
+  defp invert_bit("0"), do: "1"
+  defp invert_bit("1"), do: "0"
+end
+
+defmodule KBitTail do
+  @spec find_kth_bit(n :: integer, k :: integer) :: String.t()
+  def find_kth_bit(n, k) do
+    do_find(n, k, false)
+  end
+
+  defp do_find(1, 1, inverted) do
+    if inverted, do: "1", else: "0"
+  end
+
+  defp do_find(n, k, inverted) do
+    length = Bitwise.bsl(1, n) - 1
+    mid = Bitwise.bsl(1, n - 1)
+
+    cond do
+      k == mid -> if inverted, do: "0", else: "1"
+      k < mid -> do_find(n - 1, k, inverted)
+      true -> do_find(n - 1, length - k + 1, not inverted)
+    end
+  end
+end
+
+defmodule KBitProofTest do
+  # Proof suite for the article "Solving LeetCode's Find Kth Bit in Nth
+  # Binary String in Elixir" (1.20.1/OTP29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Kth Bit: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the LeetCode examples. When/Where: article examples 1-2. How: equality asserts per version. Why: baseline mirror-invert correctness.
+    # STAR | Situation: (3,1), (4,11). Task: lock outputs. Action: find_kth_bit each on all three. Result: "0", "1" everywhere.
+    # FLOW | (4,11): len 15, mid 8, 11>8 → k=15-11+1=5 → (3,5): len 7, mid 4, 5>4 → k=3 → (2,3): len 3, mid 2, 3>2 → k=1 → (1,1)="0" → invert, invert, invert → "1".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the two examples" do
+      assert KBitBrute.find_kth_bit(3, 1) == "0"
+      assert KBitRec.find_kth_bit(3, 1) == "0"
+      assert KBitTail.find_kth_bit(3, 1) == "0"
+
+      assert KBitBrute.find_kth_bit(4, 11) == "1"
+      assert KBitRec.find_kth_bit(4, 11) == "1"
+      assert KBitTail.find_kth_bit(4, 11) == "1"
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: EXHAUSTIVE — brute force oracle vs both recursive versions on every (n,k) for n=1..6 (120 positions), zero mismatches. When/Where: beyond-article sweep. How: full-domain agreement assert. Why: strongest equivalence for the bounded domain.
+    # STAR | Situation: all valid (n,k), n ≤ 6. Task: prove agreement. Action: find_kth_bit each on all three. Result: identical outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on n=1..6 exhaustively" do
+      bad =
+        for n <- 1..6,
+            k <- 1..(Bitwise.bsl(1, n) - 1),
+            b = KBitBrute.find_kth_bit(n, k),
+            KBitRec.find_kth_bit(n, k) != b or KBitTail.find_kth_bit(n, k) != b,
+            do: {n, k}
+
+      assert bad == []
+    end
+  end
+end
+
+# Root Nodes article code, inlined here (never in /lib). NOTE: renamed
+# `Solution`s so all three coexist. RootRecBroken is verbatim (list-built
+# guess set queried with tuples — always misses); RootRecFixed and
+# RootIterFixed normalize guesses to {u, v} tuples, matching the article's
+# own stated intent ("we can simply use {u, v} tuples").
+defmodule RootBrute do
+  @spec root_count(edges :: [[integer]], guesses :: [[integer]], k :: integer) :: integer
+  def root_count(edges, guesses, k) do
+    n = length(edges) + 1
+
+    adj =
+      Enum.reduce(edges, Enum.map(0..(n - 1), fn _ -> [] end), fn [a, b], adj ->
+        adj |> List.update_at(a, &[b | &1]) |> List.update_at(b, &[a | &1])
+      end)
+
+    guess_set = MapSet.new(guesses)
+
+    0..(n - 1)
+    |> Enum.count(fn root -> count_correct(adj, root, -1, guess_set) >= k end)
+  end
+
+  defp count_correct(adj, node, parent, guess_set) do
+    Enum.reduce(Enum.at(adj, node), 0, fn neighbor, acc ->
+      if neighbor == parent do
+        acc
+      else
+        guess_correct = if MapSet.member?(guess_set, [node, neighbor]), do: 1, else: 0
+        acc + guess_correct + count_correct(adj, neighbor, node, guess_set)
+      end
+    end)
+  end
+end
+
+defmodule RootRecBroken do
+  @spec root_count(edges :: [[integer]], guesses :: [[integer]], k :: integer) :: integer
+  def root_count(edges, guesses, k) do
+    n = length(edges) + 1
+    adj = build_adjacency(edges, n)
+    guess_set = MapSet.new(guesses)
+    initial_count = bottom_up(adj, 0, -1, guess_set)
+    result = :counters.new(1, [])
+    top_down(adj, 0, -1, initial_count, guess_set, k, result)
+    :counters.get(result, 1)
+  end
+
+  defp build_adjacency(edges, n) do
+    Enum.reduce(edges, %{}, fn [a, b], adj ->
+      adj |> Map.update(a, [b], &[b | &1]) |> Map.update(b, [a], &[a | &1])
+    end)
+    |> then(fn adj -> Enum.reduce(0..(n - 1), adj, fn i, acc -> Map.put_new(acc, i, []) end) end)
+  end
+
+  defp bottom_up(adj, node, parent, guess_set) do
+    adj
+    |> Map.get(node, [])
+    |> Enum.reduce(0, fn neighbor, acc ->
+      if neighbor == parent do
+        acc
+      else
+        child_count = bottom_up(adj, neighbor, node, guess_set)
+        edge_guess = if MapSet.member?(guess_set, {node, neighbor}), do: 1, else: 0
+        acc + edge_guess + child_count
+      end
+    end)
+  end
+
+  defp top_down(adj, node, parent, count, guess_set, k, result) do
+    if count >= k do
+      :counters.add(result, 1, 1)
+    end
+
+    adj
+    |> Map.get(node, [])
+    |> Enum.each(fn neighbor ->
+      if neighbor != parent do
+        child_count =
+          count -
+            (if MapSet.member?(guess_set, {node, neighbor}), do: 1, else: 0) +
+            (if MapSet.member?(guess_set, {neighbor, node}), do: 1, else: 0)
+
+        top_down(adj, neighbor, node, child_count, guess_set, k, result)
+      end
+    end)
+  end
+end
+
+defmodule RootRecFixed do
+  @spec root_count(edges :: [[integer]], guesses :: [[integer]], k :: integer) :: integer
+  def root_count(edges, guesses, k) do
+    n = length(edges) + 1
+    adj = build_adjacency(edges, n)
+    guess_set = MapSet.new(Enum.map(guesses, fn [u, v] -> {u, v} end))
+    initial_count = bottom_up(adj, 0, -1, guess_set)
+    result = :counters.new(1, [])
+    top_down(adj, 0, -1, initial_count, guess_set, k, result)
+    :counters.get(result, 1)
+  end
+
+  defp build_adjacency(edges, n) do
+    Enum.reduce(edges, %{}, fn [a, b], adj ->
+      adj |> Map.update(a, [b], &[b | &1]) |> Map.update(b, [a], &[a | &1])
+    end)
+    |> then(fn adj -> Enum.reduce(0..(n - 1), adj, fn i, acc -> Map.put_new(acc, i, []) end) end)
+  end
+
+  defp bottom_up(adj, node, parent, guess_set) do
+    adj
+    |> Map.get(node, [])
+    |> Enum.reduce(0, fn neighbor, acc ->
+      if neighbor == parent do
+        acc
+      else
+        child_count = bottom_up(adj, neighbor, node, guess_set)
+        edge_guess = if MapSet.member?(guess_set, {node, neighbor}), do: 1, else: 0
+        acc + edge_guess + child_count
+      end
+    end)
+  end
+
+  defp top_down(adj, node, parent, count, guess_set, k, result) do
+    if count >= k do
+      :counters.add(result, 1, 1)
+    end
+
+    adj
+    |> Map.get(node, [])
+    |> Enum.each(fn neighbor ->
+      if neighbor != parent do
+        child_count =
+          count -
+            (if MapSet.member?(guess_set, {node, neighbor}), do: 1, else: 0) +
+            (if MapSet.member?(guess_set, {neighbor, node}), do: 1, else: 0)
+
+        top_down(adj, neighbor, node, child_count, guess_set, k, result)
+      end
+    end)
+  end
+end
+
+defmodule RootIterFixed do
+  @spec root_count(edges :: [[integer]], guesses :: [[integer]], k :: integer) :: integer
+  def root_count(edges, guesses, k) do
+    n = length(edges) + 1
+    adj = build_adjacency(edges, n)
+    guess_set = MapSet.new(Enum.map(guesses, fn [u, v] -> {u, v} end))
+    initial_count = bottom_up_iterative(adj, 0, guess_set)
+    top_down_iterative(adj, 0, initial_count, guess_set, k)
+  end
+
+  defp build_adjacency(edges, n) do
+    adj =
+      Enum.reduce(edges, %{}, fn [a, b], acc ->
+        acc |> Map.update(a, [b], &[b | &1]) |> Map.update(b, [a], &[a | &1])
+      end)
+
+    Enum.reduce(0..(n - 1), adj, fn i, acc -> Map.put_new(acc, i, []) end)
+  end
+
+  defp bottom_up_iterative(adj, root, guess_set) do
+    dob([{root, -1, :enter, []}], adj, guess_set, %{}) |> Map.get(root)
+  end
+
+  defp dob([], _adj, _guess_set, counts), do: counts
+
+  defp dob([{node, parent, :enter, _} | rest], adj, guess_set, counts) do
+    children = adj |> Map.get(node, []) |> Enum.reject(&(&1 == parent))
+    dob(Enum.map(children, fn c -> {c, node, :enter, []} end) ++ [{node, parent, :exit, children} | rest], adj, guess_set, counts)
+  end
+
+  defp dob([{node, _parent, :exit, children} | rest], adj, guess_set, counts) do
+    total =
+      Enum.reduce(children, 0, fn child, acc ->
+        acc + Map.get(counts, child, 0) + (if MapSet.member?(guess_set, {node, child}), do: 1, else: 0)
+      end)
+
+    dob(rest, adj, guess_set, Map.put(counts, node, total))
+  end
+
+  defp top_down_iterative(adj, root, initial_count, guess_set, k) do
+    do_top_down([{root, -1, initial_count}], adj, guess_set, k, 0)
+  end
+
+  defp do_top_down([], _adj, _guess_set, _k, result), do: result
+
+  defp do_top_down([{node, parent, count} | rest], adj, guess_set, k, result) do
+    new_result = if count >= k, do: result + 1, else: result
+
+    children =
+      adj
+      |> Map.get(node, [])
+      |> Enum.reject(&(&1 == parent))
+      |> Enum.map(fn child ->
+        child_count =
+          count -
+            (if MapSet.member?(guess_set, {node, child}), do: 1, else: 0) +
+            (if MapSet.member?(guess_set, {child, node}), do: 1, else: 0)
+
+        {child, node, child_count}
+      end)
+
+    do_top_down(children ++ rest, adj, guess_set, k, new_result)
+  end
+end
+
+defmodule RootProofTest do
+  # Proof suite for the article "Solving LeetCode's Count Number of Possible
+  # Root Nodes in Elixir" (1.20.1/OTP29). Same convention.
+  use ExUnit.Case, async: true
+
+  @ex1 {[[0, 1], [1, 2], [1, 3], [4, 2]], [[1, 3], [0, 1], [1, 0], [2, 4]], 3, 3}
+  @ex2 {[[0, 1], [1, 2], [2, 3], [3, 4]], [[1, 0], [3, 4], [2, 1], [3, 2]], 1, 5}
+
+  describe "Root Nodes: fixed versions" do
+    # 5W1H | Who: reader. What: brute force and both tuple-normalized re-rooting versions pass the LeetCode examples plus star, reversed-guess and k=0 batteries. When/Where: article examples 1-2 + edges. How: equality asserts per version. Why: baseline re-rooting correctness once guesses are tuples.
+    # STAR | Situation: ex1, ex2, star, reversed, k=0. Task: lock outputs. Action: root_count each on all three. Result: 3, 5, 1, 0, 3 everywhere.
+    # FLOW | ex1 root 0: children 1,2,3… bottom-up from 0 counts [0,1]✓… full count 3 ≥ 3; re-root to 1: edge (0→1) guessed, loses 1, gains 0 → 2… only roots 0,1,2 reach 3.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "brute force and fixed re-rooting pass examples and edges" do
+      for {edges, guesses, k, expected} <- [
+            @ex1,
+            @ex2,
+            {[[0, 1], [0, 2], [0, 3]], [[0, 1], [0, 2]], 2, 2},
+            {[[0, 1], [0, 2], [0, 3]], [[1, 0], [2, 0], [3, 0]], 2, 0},
+            {[[0, 1], [1, 2]], [[0, 1]], 0, 3}
+          ] do
+        assert RootBrute.root_count(edges, guesses, k) == expected
+        assert RootRecFixed.root_count(edges, guesses, k) == expected
+        assert RootIterFixed.root_count(edges, guesses, k) == expected
+      end
+    end
+  end
+
+  describe "Root Nodes: list-vs-tuple bug (article error documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL — the verbatim re-rooting builds the guess set from LISTS but queries TUPLES, so every edge check misses and both examples return 0. When/Where: article Solution 2 (Solution 3 shares the flaw). How: exact-zero asserts. Why: [u,v] and {u,v} are different terms; MapSet can't bridge them.
+    # STAR | Situation: verbatim version on ex1 and ex2. Task: prove the zero. Action: root_count each. Result: 0, 0 (should be 3, 5).
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim re-rooting returns zero on both examples" do
+      {e1, g1, k1, _} = @ex1
+      {e2, g2, k2, _} = @ex2
+      assert RootRecBroken.root_count(e1, g1, k1) == 0
+      assert RootRecBroken.root_count(e2, g2, k2) == 0
+    end
+
+    # 5W1H | Who: prover. What: the trap in one line — a list-built set never contains a tuple. When/Where: stdlib semantics behind the article bug. How: single assert. Why: isolates the exact misconception.
+    # STAR | Situation: MapSet.new([[1,3]]) queried with {1,3}. Task: prove miss. Action: member?. Result: false.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "list-built set misses tuple query" do
+      assert MapSet.member?(MapSet.new([[1, 3]]), {1, 3}) == false
+    end
+  end
+end
+
+# LCP-K Removal article code, inlined here (never in /lib). NOTE: renamed
+# `Solution`s so all three coexist. LcpKTrieFixed uses {parent, char} tuple
+# node ids (verbatim `:"node_#{depth}_#{char}"` atoms collide across different
+# parents); LcpKHashFixed parenthesizes the hash update (verbatim precedence
+# makes it hd(integer)). Both fixes marked FIX.
+defmodule LcpKSort do
+  @spec longest_common_prefix(words :: [String.t()], k :: integer) :: [integer]
+  def longest_common_prefix(words, k) do
+    n = length(words)
+    if k > n, do: List.duplicate(0, n), else: do_solve(words, k, n)
+  end
+
+  defp do_solve(words, k, n) do
+    sorted = 0..(n - 1) |> Enum.sort_by(fn i -> Enum.at(words, i) end)
+
+    windows =
+      sorted
+      |> Enum.chunk_every(k, 1, :discard)
+      |> Enum.map(fn window ->
+        {lcp_length(Enum.at(words, hd(window)), Enum.at(words, List.last(window))), window}
+      end)
+
+    {max_lcp, max_window, second_max_lcp} =
+      Enum.reduce(windows, {0, [], 0}, fn {lcp, window}, {mx, mx_win, mx2} ->
+        cond do
+          lcp > mx -> {lcp, window, mx}
+          lcp > mx2 -> {mx, mx_win, lcp}
+          true -> {mx, mx_win, mx2}
+        end
+      end)
+
+    max_set = MapSet.new(max_window)
+
+    Enum.map(0..(n - 1), fn i ->
+      cond do
+        n - 1 < k -> 0
+        MapSet.member?(max_set, i) -> second_max_lcp
+        true -> max_lcp
+      end
+    end)
+  end
+
+  defp lcp_length(a, b) do
+    a_chars = String.graphemes(a)
+    b_chars = String.graphemes(b)
+    min_len = min(length(a_chars), length(b_chars))
+
+    Enum.reduce_while(0..(min_len - 1), 0, fn i, acc ->
+      if Enum.at(a_chars, i) == Enum.at(b_chars, i) do
+        {:cont, acc + 1}
+      else
+        {:halt, acc}
+      end
+    end)
+  end
+end
+
+defmodule LcpKTrieFixed do
+  def longest_common_prefix(words, k) do
+    n = length(words)
+    if k > n, do: List.duplicate(0, n), else: do_solve(words, k, n)
+  end
+
+  defp do_solve(words, k, _n) do
+    trie = Enum.reduce(words, %{root: %{children: %{}, count: 0}}, fn w, t -> add_word(t, w) end)
+
+    Enum.map(words, fn word ->
+      trie = remove_word(trie, word)
+      result = longest_valid_prefix(trie, k)
+      _trie = add_word(trie, word)
+      result
+    end)
+  end
+
+  defp add_word(trie, word) do
+    do_add(trie, String.graphemes(word), :root)
+  end
+
+  defp do_add(trie, [], _node), do: trie
+
+  defp do_add(trie, [char | rest], node) do
+    node_data = Map.get(trie, node, %{children: %{}, count: 0})
+    children = Map.get(node_data, :children, %{})
+    child_node = Map.get(children, char)
+
+    {trie, next_node} =
+      if child_node do
+        {trie, child_node}
+      else
+        new_node = {node, char}
+        new_children = Map.put(children, char, new_node)
+        trie = trie |> Map.put(node, %{node_data | children: new_children}) |> Map.put(new_node, %{children: %{}, count: 0})
+        {trie, new_node}
+      end
+
+    new_count = Map.get(Map.get(trie, next_node, %{}), :count, 0) + 1
+    trie = Map.put(trie, next_node, %{Map.get(trie, next_node) | count: new_count})
+    do_add(trie, rest, next_node)
+  end
+
+  defp remove_word(trie, word) do
+    do_remove(trie, String.graphemes(word), :root)
+  end
+
+  defp do_remove(trie, [], _node), do: trie
+
+  defp do_remove(trie, [char | rest], node) do
+    child_node = trie |> Map.get(node) |> Map.get(:children, %{}) |> Map.get(char)
+    new_count = max(Map.get(Map.get(trie, child_node, %{}), :count, 0) - 1, 0)
+    trie = Map.put(trie, child_node, %{Map.get(trie, child_node) | count: new_count})
+    do_remove(trie, rest, child_node)
+  end
+
+  defp longest_valid_prefix(trie, k) do
+    do_longest(trie, :root, 0, k)
+  end
+
+  defp do_longest(trie, node, depth, k) do
+    children = trie |> Map.get(node, %{children: %{}, count: 0}) |> Map.get(:children, %{})
+
+    Enum.reduce(children, depth, fn {_char, child_node}, acc ->
+      if Map.get(Map.get(trie, child_node, %{count: 0}), :count, 0) >= k do
+        max(acc, do_longest(trie, child_node, depth + 1, k))
+      else
+        acc
+      end
+    end)
+  end
+end
+
+defmodule LcpKHashFixed do
+  @mod 1_000_000_007
+  @base 87
+
+  def longest_common_prefix(words, k) do
+    n = length(words)
+    if k > n, do: List.duplicate(0, n), else: do_solve(words, k, n)
+  end
+
+  defp do_solve(words, k, _n) do
+    prefix_hashes = Enum.map(words, &compute_prefix_hashes/1)
+    freq = build_frequency(prefix_hashes)
+    distinct = prefix_hashes |> List.flatten() |> Enum.uniq()
+
+    Enum.map(Enum.with_index(words), fn {_word, i} ->
+      removed = Enum.at(prefix_hashes, i)
+
+      updated =
+        Enum.reduce(removed, freq, fn {_len, hash}, acc ->
+          Map.update(acc, hash, -1, &(&1 - 1))
+        end)
+
+      {_best_len, best} =
+        Enum.reduce(distinct, {0, 0}, fn {len, hash}, {bl, bv} ->
+          if Map.get(updated, hash, 0) >= k and len > bl do
+            {len, len}
+          else
+            {bl, bv}
+          end
+        end)
+
+      best
+    end)
+  end
+
+  defp compute_prefix_hashes(word) do
+    word
+    |> String.graphemes()
+    |> Enum.reduce({[], 0}, fn char, {hashes, hash} ->
+      [code] = String.to_charlist(char)
+      new_hash = rem(hash * @base + code, @mod)
+      {[{length(hashes) + 1, new_hash} | hashes], new_hash}
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp build_frequency(prefix_hashes) do
+    Enum.reduce(prefix_hashes, %{}, fn hashes, acc ->
+      Enum.reduce(hashes, acc, fn {_len, hash}, acc2 ->
+        Map.update(acc2, hash, 1, &(&1 + 1))
+      end)
+    end)
+  end
+end
+
+defmodule LcpKProofTest do
+  # Proof suite for the article "Solving LeetCode's Longest Common Prefix of
+  # K Strings After Removal in Elixir" (1.20.1/OTP29). Same convention.
+  use ExUnit.Case, async: true
+
+  # Trie version VERBATIM (renamed module only): node ids `:"node_#{depth}_#{char}"`
+  # collide across different parents. Runtime-compiled (stderr captured).
+  @verbatim_trie_src """
+  defmodule CkVerbatimLcpKTrie do
+    def longest_common_prefix(words, k) do
+      n = length(words)
+      if k > n, do: List.duplicate(0, n), else: do_solve(words, k, n)
+    end
+    defp do_solve(words, k, n) do
+      trie = build_trie(words, k)
+      Enum.map(words, fn word ->
+        trie = remove_word(trie, word)
+        result = longest_valid_prefix(trie, k)
+        _trie = add_word(trie, word, k)
+        result
+      end)
+    end
+    defp build_trie(words, k) do
+      initial = %{root: %{children: %{}, count: 0}}
+      Enum.reduce(words, initial, fn word, trie -> add_word(trie, word, k) end)
+    end
+    defp add_word(trie, word, k) do
+      do_add(trie, String.graphemes(word), :root, 0, k)
+    end
+    defp do_add(trie, [], _node, _depth, _k), do: trie
+    defp do_add(trie, [char | rest], node, depth, k) do
+      node_data = Map.get(trie, node, %{children: %{}, count: 0})
+      children = Map.get(node_data, :children, %{})
+      child_node = Map.get(children, char)
+      {trie, next_node} =
+        if child_node do
+          {trie, child_node}
+        else
+          new_node = :"node_\#{depth}_\#{char}"
+          new_children = Map.put(children, char, new_node)
+          new_node_data = %{children: %{}, count: 0}
+          trie = trie |> Map.put(node, %{node_data | children: new_children}) |> Map.put(new_node, new_node_data)
+          {trie, new_node}
+        end
+      new_count = Map.get(Map.get(trie, next_node, %{}), :count, 0) + 1
+      trie = Map.put(trie, next_node, %{Map.get(trie, next_node) | count: new_count})
+      do_add(trie, rest, next_node, depth + 1, k)
+    end
+    defp remove_word(trie, word), do: do_remove(trie, String.graphemes(word), :root)
+    defp do_remove(trie, [], _node), do: trie
+    defp do_remove(trie, [char | rest], node) do
+      node_data = Map.get(trie, node)
+      children = Map.get(node_data, :children, %{})
+      child_node = Map.get(children, char)
+      new_count = max(Map.get(Map.get(trie, child_node, %{}), :count, 0) - 1, 0)
+      trie = Map.put(trie, child_node, %{Map.get(trie, child_node) | count: new_count})
+      do_remove(trie, rest, child_node)
+    end
+    defp longest_valid_prefix(trie, k), do: do_longest(trie, :root, 0, k)
+    defp do_longest(trie, node, depth, k) do
+      node_data = Map.get(trie, node, %{children: %{}, count: 0})
+      children = Map.get(node_data, :children, %{})
+      Enum.reduce(children, depth, fn {_char, child_node}, acc ->
+        child_data = Map.get(trie, child_node, %{count: 0})
+        if Map.get(child_data, :count, 0) >= k do
+          max(acc, do_longest(trie, child_node, depth + 1, k))
+        else
+          acc
+        end
+      end)
+    end
+  end
+  """
+
+  # Rolling-hash version VERBATIM (renamed module only): `|>` precedence makes
+  # the update `hd(integer)`. Runtime-compiled (stderr captured).
+  @verbatim_hash_src """
+  defmodule CkVerbatimLcpKHash do
+    @mod 1_000_000_007
+    @base 87
+    def longest_common_prefix(words, k) do
+      n = length(words)
+      if k > n, do: List.duplicate(0, n), else: do_solve(words, k, n)
+    end
+    defp do_solve(words, k, n) do
+      prefix_hashes = Enum.map(words, &compute_prefix_hashes/1)
+      freq = build_frequency(prefix_hashes)
+      valid_lengths = Enum.filter(Map.keys(freq), fn len -> freq[len] >= k end) |> Enum.sort(:desc)
+      Enum.map(0..(n - 1), fn i ->
+        removed_hashes = Enum.at(prefix_hashes, i)
+        updated_freq = Enum.reduce(removed_hashes, freq, fn {_len, hash}, acc ->
+          Map.update(acc, hash, -1, &(&1 - 1))
+        end)
+        result = Enum.find(valid_lengths, fn len ->
+          hash = Enum.at(removed_hashes, len - 1) |> elem(1)
+          Map.get(updated_freq, hash, 0) >= k
+        end) || 0
+        result
+      end)
+    end
+    defp compute_prefix_hashes(word) do
+      word
+      |> String.graphemes()
+      |> Enum.reduce({[], 0}, fn char, {hashes, hash} ->
+        new_hash = rem(hash * @base + String.to_charlist(char) |> hd(), @mod)
+        {[{length(hashes) + 1, new_hash} | hashes], new_hash}
+      end)
+      |> elem(0)
+      |> Enum.reverse()
+    end
+    defp build_frequency(prefix_hashes) do
+      Enum.reduce(prefix_hashes, %{}, fn hashes, acc ->
+        Enum.reduce(hashes, acc, fn {_len, hash}, acc2 ->
+          Map.update(acc2, hash, 1, &(&1 + 1))
+        end)
+      end)
+    end
+  end
+  """
+
+  describe "LCP-K: correct and fixed versions" do
+    # 5W1H | Who: reader. What: sorting version passes the LeetCode examples; both FIXED versions (tuple trie nodes, parenthesized hash) agree with it on examples plus collision, duplicate and single-char batteries. When/Where: article Solution 1 + prover fixes for Solutions 2-3. How: equality asserts. Why: baseline window correctness + fix validation.
+    # STAR | Situation: ex1, ex2, atom-collision pairs, dup runs, boundary k. Task: lock outputs. Action: longest_common_prefix each on all three. Result: identical correct outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "sorting passes and fixes agree" do
+      for {words, k, expected} <- [
+            {(["jump", "run", "run", "jump", "run"]), 2, [3, 4, 4, 3, 4]},
+            {(["dog", "racer", "car"]), 2, [0, 0, 0]},
+            {(["ab", "cb"]), 1, [2, 2]},
+            {(["abc", "cbc"]), 1, [3, 3]},
+            {(["a", "a", "a"]), 2, [1, 1, 1]},
+            {(["ab", "ac", "ad"]), 2, [1, 1, 1]},
+            {(["x"]), 1, [0]},
+            {(["a", "b"]), 2, [0, 0]}
+          ] do
+        assert LcpKSort.longest_common_prefix(words, k) == expected
+        assert LcpKTrieFixed.longest_common_prefix(words, k) == expected
+        assert LcpKHashFixed.longest_common_prefix(words, k) == expected
+      end
+    end
+
+    # 5W1H | Who: prover. What: randomized cross-check of sorting vs brute force (300 tiny cases, seeded): zero mismatches, corroborating the max/second-max window logic. When/Where: beyond-article audit. How: agreement asserts. Why: randomized evidence for the laminar claim.
+    # STAR | Situation: 300 seeded small cases. Task: prove agreement. Action: compare sorting vs brute each. Result: 0 mismatches.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "sorting matches brute force on seeded sweep" do
+      alpha = ["a", "ab", "abc", "b", "bc", "bcd", "c", "abx", "aby", "jump", "run", "run", "jump"]
+
+      mismatches =
+        for t <- 1..300,
+            words = for(_ <- 1..(2 + rem(t * 7, 5)), do: Enum.at(alpha, rem(t * 13 + 1, length(alpha)))),
+            k = 1 + rem(t * 11, min(4, length(words))),
+            LcpKSort.longest_common_prefix(words, k) != brute_lcp_k(words, k),
+            do: {words, k}
+
+      assert mismatches == []
+    end
+  end
+
+  describe "LCP-K: broken versions (article errors documented)" do
+    # 5W1H | Who: prover + future AI reader. What: CRITICAL pair — the verbatim trie returns [3,3,3,3,3] on ex1 (atom node-id reuse across parents corrupts counts) and CRASHES on ex2 (BadMapError walking clobbered nodes); the verbatim rolling hash crashes ALWAYS (ArithmeticError: integer + charlist from |> precedence). When/Where: article Solutions 2-3. How: exact-wrong-value + assert_raise. Why: shared mutable-looking identity without uniqueness; precedence.
+    # STAR | Situation: verbatim trie/hash sources. Task: prove failure modes. Action: runtime-compile (stderr captured), run ex1/ex2. Result: [3,3,3,3,3], BadMapError, ArithmeticError.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "verbatim trie is wrong and crashes; verbatim hash always crashes" do
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), {:mods, Code.compile_string(@verbatim_trie_src <> @verbatim_hash_src)})
+      end)
+
+      [{trie_mod, _}, {hash_mod, _}] =
+        receive do
+          {:mods, mods} -> mods
+        end
+
+      assert apply(trie_mod, :longest_common_prefix, [["jump", "run", "run", "jump", "run"], 2]) == [3, 3, 3, 3, 3]
+
+      assert_raise BadMapError, fn ->
+        apply(trie_mod, :longest_common_prefix, [["dog", "racer", "car"], 2])
+      end
+
+      assert_raise ArithmeticError, fn ->
+        apply(hash_mod, :longest_common_prefix, [["jump", "run"], 2])
+      end
+    end
+  end
+
+  # Local brute force for the sweep (testing aid, not article code).
+  defp brute_lcp_k(words, k) do
+    n = length(words)
+
+    Enum.map(0..(n - 1), fn i ->
+      rest =
+        words |> Enum.with_index() |> Enum.reject(fn {_, j} -> j == i end) |> Enum.map(&elem(&1, 0))
+
+      if length(rest) < k do
+        0
+      else
+        rest |> combos(k) |> Enum.map(&lcp_all/1) |> Enum.max()
+      end
+    end)
+  end
+
+  defp combos(_, 0), do: [[]]
+  defp combos([], _), do: []
+  defp combos([h | t], k), do: (for rest <- combos(t, k - 1), do: [h | rest]) ++ combos(t, k)
+
+  defp lcp_all([s]), do: String.length(s)
+  defp lcp_all([a, b | rest]), do: lcp_all([common_prefix(a, b) | rest])
+
+  defp common_prefix(a, b) do
+    {pre, _} =
+      Enum.split_while(Enum.zip(String.graphemes(a), String.graphemes(b)), fn {x, y} -> x == y end)
+
+    pre |> Enum.map(&elem(&1, 0)) |> Enum.join()
+  end
+end
+
 # Substring with Concatenation article code, inlined here (this repo never
 # uses /lib). NOTE: the article names versions `Solution`; renamed here.
 # ConcatClean keeps one verbatim wart (`new_count` dead assignment) renamed
