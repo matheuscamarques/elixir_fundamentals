@@ -8108,3 +8108,106 @@ defmodule LvpProofTest do
     end
   end
 end
+
+# Distribute Candies article code, inlined here (never in /lib). NOTE: the
+# article names versions `Solution`; renamed here so all three coexist.
+defmodule CandyBrute do
+  @spec distribute_candies(n :: integer, limit :: integer) :: integer
+  def distribute_candies(n, limit) do
+    for a <- 0..min(n, limit),
+        b <- 0..min(n - a, limit),
+        c = n - a - b,
+        c >= 0 and c <= limit do
+      {a, b, c}
+    end
+    |> length()
+  end
+end
+
+defmodule CandyFormula do
+  @spec distribute_candies(n :: integer, limit :: integer) :: integer
+  def distribute_candies(n, limit) do
+    total = comb(n + 2, 2)
+    one_exceeds = 3 * comb(n - limit + 1, 2)
+    two_exceed = 3 * comb(n - 2 * limit, 2)
+    three_exceed = comb(n - 3 * limit - 1, 2)
+
+    total - one_exceeds + two_exceed - three_exceed
+  end
+
+  defp comb(x, 2) when x >= 2 do
+    div(x * (x - 1), 2)
+  end
+
+  defp comb(_x, _k), do: 0
+end
+
+defmodule CandyEnum do
+  @spec distribute_candies(n :: integer, limit :: integer) :: integer
+  def distribute_candies(n, limit) do
+    min_child1 = max(0, n - 2 * limit)
+    max_child1 = min(n, limit)
+
+    if min_child1 > max_child1 do
+      0
+    else
+      min_child1..max_child1
+      |> Enum.reduce(0, fn a, acc ->
+        remaining = n - a
+        min_child2 = max(0, remaining - limit)
+        max_child2 = min(remaining, limit)
+        count = max(0, max_child2 - min_child2 + 1)
+        acc + count
+      end)
+    end
+  end
+end
+
+defmodule CandyProofTest do
+  # Proof suite for the article "How I Think Through and Solve Distribute
+  # Candies Among Children II in Elixir" (1.20.1/OTP29). Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Candies: correct versions" do
+    # 5W1H | Who: reader. What: all three versions pass the article example plus zero, impossible, unconstrained and single-candy edges. When/Where: article example (n=5, limit=2) + edges. How: equality asserts per version. Why: baseline stars-and-bars correctness.
+    # STAR | Situation: (5,2), (0,0), (5,0), (3,10), (1,1), (0,5). Task: lock counts. Action: distribute_candies each on all three. Result: 3, 1, 0, 10, 3, 1 everywhere.
+    # FLOW | (5,2): total C(7,2)=21; one-exceeds 3×C(4,2)=18; two/three-exceed 0 → 21-18=3.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions pass the example and edges" do
+      for {n, limit, expected} <- [
+            {5, 2, 3},
+            {0, 0, 1},
+            {5, 0, 0},
+            {3, 10, 10},
+            {1, 1, 3},
+            {0, 5, 1}
+          ] do
+        assert CandyBrute.distribute_candies(n, limit) == expected
+        assert CandyFormula.distribute_candies(n, limit) == expected
+        assert CandyEnum.distribute_candies(n, limit) == expected
+      end
+    end
+
+    # 5W1H | Who: prover + future AI reader. What: EXHAUSTIVE — brute oracle vs formula and enumeration on every (n, limit) for n=0..12, limit=0..6 (91 combos), zero mismatches. When/Where: beyond-article sweep. How: full-domain agreement assert. Why: strongest equivalence for the bounded domain.
+    # STAR | Situation: all small (n, limit). Task: prove agreement. Action: distribute_candies each on all three. Result: identical outputs everywhere.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "all versions agree on n=0..12 exhaustively" do
+      bad =
+        for n <- 0..12,
+            lim <- 0..6,
+            b = CandyBrute.distribute_candies(n, lim),
+            CandyFormula.distribute_candies(n, lim) != b or CandyEnum.distribute_candies(n, lim) != b,
+            do: {n, lim}
+
+      assert bad == []
+    end
+
+    # 5W1H | Who: prover. What: formula and enumeration agree at scale (n = 10^6) where brute force is infeasible. When/Where: article constraints (n ≤ 10^6). How: equality assert between the two fast versions. Why: scale behavior beyond brute reach.
+    # STAR | Situation: (1000000, 1000000). Task: lock agreement. Action: distribute_candies on both fast versions. Result: 500001500001 twice.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "fast versions agree at scale" do
+      assert CandyFormula.distribute_candies(1_000_000, 1_000_000) ==
+               CandyEnum.distribute_candies(1_000_000, 1_000_000)
+    end
+  end
+end
