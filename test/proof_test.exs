@@ -8577,3 +8577,168 @@ defmodule StirRev2ProofTest do
     end
   end
 end
+
+defmodule CostPoint do
+  @moduledoc false
+  defstruct [:x, :y]
+end
+
+defmodule DataStructProofTest do
+  # Proof suite for the article "O Custo Computacional das Estruturas de Dados
+  # Fundamentais em Elixir" (1.20.1/OTP29). Big-O classes are NOT executable
+  # and are not asserted here; every BEHAVIORAL fact below (return values,
+  # edge cases, error shapes) is. Same convention.
+  use ExUnit.Case, async: true
+
+  describe "Cost: lists, tuples, maps" do
+    # 5W1H | Who: reader. What: cons-cell shape, head/tail O(1) ops, indexed/length O(n) behavior. When/Where: article §§1-2. How: equality asserts. Why: list-vs-array is the article's core distinction.
+    # STAR | Situation: [1,2,3] ops. Task: lock behaviors. Action: cons, prepend, append, at, replace, length, member. Result: values as asserted.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "list behaviors" do
+      assert [1, 2, 3] == [1 | [2 | [3 | []]]]
+      assert [0 | [1, 2]] == [0, 1, 2]
+      assert [1, 2] ++ [3] == [1, 2, 3]
+      assert Enum.at([1, 2, 3], 2) == 3
+      assert Enum.at([1, 2, 3], 9) == nil
+      assert List.replace_at([1, 2, 3], 1, 9) == [1, 9, 3]
+      assert length([1, 2, 3]) == 3
+      assert Enum.member?([1, 2, 3], 2) == true
+    end
+
+    # 5W1H | Who: reader. What: tuple indexed access/size, copy-on-write update semantics, no Enumerable. When/Where: article §2. How: equality + assert_raise. Why: tuple is the O(1)-access answer.
+    # STAR | Situation: {1,2,3} ops. Task: lock behaviors. Action: elem, put_elem (original kept), tuple_size, Enum.map raises. Result: values as asserted.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "tuple behaviors" do
+      assert elem({1, 2, 3}, 2) == 3
+      assert put_elem({1, 2, 3}, 0, 9) == {9, 2, 3}
+      assert tuple_size({1, 2, 3}) == 3
+
+      assert_raise Protocol.UndefinedError, fn ->
+        Enum.map({1, 2}, fn x -> x end)
+      end
+    end
+
+    # 5W1H | Who: reader. What: map put/get/has_key/delete/update/size + frequencies counting. When/Where: article §3. How: equality asserts. Why: HAMT associative contract.
+    # STAR | Situation: %{a: 1} ops. Task: lock behaviors. Action: put, get+default, has_key?, delete, update, size, frequencies. Result: values as asserted.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "map behaviors" do
+      assert Map.put(%{a: 1}, :b, 2) == %{a: 1, b: 2}
+      # Map.new/1 hides the literal keys from the type checker (same idea as
+      # opaque/1): a missing-key lookup would otherwise warn it always hits default.
+      assert Map.new(a: 1) |> Map.get(:zzz, :dflt) == :dflt
+      assert Map.has_key?(%{a: 1}, :a) == true
+      assert Map.delete(%{a: 1, b: 2}, :a) == %{b: 2}
+      assert Map.update(%{a: 1}, :a, 0, &(&1 + 10)) == %{a: 11}
+      assert map_size(%{a: 1, b: 2}) == 2
+      assert Enum.frequencies(["a", "b", "a"]) == %{"a" => 2, "b" => 1}
+    end
+  end
+
+  describe "Cost: keywords, structs, binaries" do
+    # 5W1H | Who: reader. What: duplicate keys allowed in keyword lists; get with default. When/Where: article §4. How: equality asserts. Why: keyword-vs-map distinction.
+    # STAR | Situation: [a: 1, a: 2]. Task: lock behaviors. Action: get_values, get+default, has_key?. Result: [1,2], :dflt, true.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "keyword behaviors" do
+      assert Keyword.get_values([a: 1, a: 2], :a) == [1, 2]
+      assert Keyword.get([a: 1], :zzz, :dflt) == :dflt
+      assert Keyword.has_key?([a: 1], :a) == true
+    end
+
+    # 5W1H | Who: reader. What: struct field read/update/match. When/Where: article §5. How: equality asserts. Why: fixed-key domain modeling contract.
+    # STAR | Situation: %CostPoint{x: 1, y: 2}. Task: lock behaviors. Action: dot access, struct update, match. Result: 1, updated struct, bound var.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "struct behaviors" do
+      assert %CostPoint{x: 1, y: 2}.x == 1
+      assert %CostPoint{%CostPoint{x: 1, y: 2} | y: 9} == %CostPoint{x: 1, y: 9}
+      assert %CostPoint{x: x} = %CostPoint{x: 1, y: 2}
+      assert x == 1
+    end
+
+    # 5W1H | Who: reader. What: byte vs grapheme sizes ("ação": 6 bytes, 4 chars), binary segment match, iodata build, <> result. When/Where: article §6. How: equality asserts. Why: bytes-vs-chars is the core binary lesson.
+    # STAR | Situation: UTF-8 strings. Task: lock behaviors. Action: byte_size, length, at, match, iodata, <>. Result: 6, 4, "ç", "he", "abc", "ab".
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "binary behaviors" do
+      assert byte_size("ação") == 6
+      assert String.length("ação") == 4
+      assert String.at("ação", 1) == "ç"
+      assert (fn <<a::binary-size(2), _::binary>> -> a end).("hello") == "he"
+      assert IO.iodata_to_binary(["a", ["b", 99]]) == "abc"
+      assert "a" <> "b" == "ab"
+    end
+  end
+
+  describe "Cost: queues, arrays, sets, ranges" do
+    # 5W1H | Who: reader. What: FIFO order, {:value,_} out tuples, O(1) len. When/Where: article §7. How: equality asserts. Why: deque FIFO contract.
+    # STAR | Situation: in 1,2,3. Task: lock order. Action: out twice. Result: values 1, 2, len stays 3.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "queue behaviors" do
+      q = :queue.in(3, :queue.in(2, :queue.in(1, :queue.new())))
+      {{:value, v1}, q1} = :queue.out(q)
+      {{:value, v2}, _} = :queue.out(q1)
+      assert {v1, v2} == {1, 2}
+      assert :queue.len(q) == 3
+    end
+
+    # 5W1H | Who: reader. What: defaults for unset cells, get/set/size. When/Where: article §8. How: equality asserts. Why: functional-array contract.
+    # STAR | Situation: size-10 default-:x array. Task: lock behaviors. Action: get unset, set+get, size. Result: :x, :y, 10.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "array behaviors" do
+      arr = :array.new(10, default: :x)
+      assert :array.get(5, arr) == :x
+      assert :array.get(5, :array.set(5, :y, arr)) == :y
+      assert :array.size(arr) == 10
+    end
+
+    # 5W1H | Who: reader. What: put/member/delete + union/intersection/difference results. When/Where: article §9. How: equality asserts (sorted where order-free). Why: set-operation contract.
+    # STAR | Situation: {1,2} vs {2,3}. Task: lock results. Action: union, intersection, difference, member, delete. Result: [1,2,3], [2], [1], true, without-1.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "mapset behaviors" do
+      assert MapSet.union(MapSet.new([1, 2]), MapSet.new([2, 3])) |> MapSet.to_list() |> Enum.sort() == [1, 2, 3]
+      assert MapSet.intersection(MapSet.new([1, 2]), MapSet.new([2, 3])) |> MapSet.to_list() == [2]
+      assert MapSet.difference(MapSet.new([1, 2]), MapSet.new([2, 3])) |> MapSet.to_list() == [1]
+      assert MapSet.member?(MapSet.new([1]), 1) == true
+      assert MapSet.delete(MapSet.new([1]), 1) == MapSet.new([])
+    end
+
+    # 5W1H | Who: reader. What: constant-memory creation, O(1) membership, stepped emptiness, iteration. When/Where: article §10. How: equality asserts. Why: range-as-two-integers contract.
+    # STAR | Situation: 1..10 etc. Task: lock behaviors. Action: in, to_list, stepped empty. Result: true/false, [1,2,3], [].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "range behaviors" do
+      assert (5 in 1..10) == true
+      assert (11 in 1..10) == false
+      assert Enum.to_list(1..3) == [1, 2, 3]
+      assert Enum.to_list(0..-1//1) == []
+    end
+  end
+
+  describe "Cost: ETS, gb_trees, ordsets" do
+    # 5W1H | Who: reader. What: private table insert/lookup/delete roundtrip. When/Where: article §11. How: equality asserts with cleanup. Why: shared-table contract.
+    # STAR | Situation: fresh :set table. Task: lock roundtrip. Action: insert, lookup, delete table. Result: [k: 1].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "ets behaviors" do
+      t = :ets.new(:cost_proof, [:set, :private])
+      :ets.insert(t, {:k, 1})
+      assert :ets.lookup(t, :k) == [k: 1]
+      :ets.delete(t)
+    end
+
+    # 5W1H | Who: reader. What: ordered iteration, lookup hit, insert/delete roundtrip; from_orddict requires sorted input. When/Where: article §12. How: equality asserts. Why: ordered-map contract.
+    # STAR | Situation: [{1,a},{2,b},{3,c}]. Task: lock behaviors. Action: to_list, lookup, enter+delete. Result: ordered pairs, {:value,"b"}, back to start.
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "gb_trees behaviors" do
+      tree = :gb_trees.from_orddict([{1, "a"}, {2, "b"}, {3, "c"}])
+      assert :gb_trees.to_list(tree) == [{1, "a"}, {2, "b"}, {3, "c"}]
+      assert :gb_trees.lookup(2, tree) == {:value, "b"}
+      assert tree |> then(&:gb_trees.enter(4, "d", &1)) |> then(&:gb_trees.delete(4, &1)) == tree
+    end
+
+    # 5W1H | Who: reader. What: from_list sorts+deds, union/intersection stay ordered. When/Where: article §13. How: equality asserts. Why: sorted-set invariant.
+    # STAR | Situation: [3,1,2,2]. Task: lock behaviors. Action: from_list, union, intersection. Result: [1,2,3], [1,2,3,4], [2,3].
+    # Author: Matheus de Camargo Marques <matheuscamarques@gmail.com>
+    test "ordsets behaviors" do
+      assert :ordsets.from_list([3, 1, 2, 2]) == [1, 2, 3]
+      assert :ordsets.union([1, 2], [2, 3]) == [1, 2, 3]
+      assert :ordsets.intersection([1, 2, 3], [2, 3, 4]) == [2, 3]
+    end
+  end
+end
